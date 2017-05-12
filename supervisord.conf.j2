@@ -1,0 +1,58 @@
+[unix_http_server]
+file=/tmp/vpnsupervisor.sock   ; (the path to the socket file)
+
+[supervisord]
+logfile=/tmp/supervisord.log ; (main log file;default $CWD/supervisord.log)
+logfile_maxbytes=50MB        ; (max main logfile bytes b4 rotation;default 50MB)
+logfile_backups=10           ; (num of main logfile rotation backups;default 10)
+loglevel=info                ; (log level;default info; others: debug,warn,trace)
+pidfile=/tmp/supervisord.pid ; (supervisord pidfile;default supervisord.pid)
+nodaemon=false               ; (start in foreground if true;default false)
+minfds=1024                  ; (min. avail startup file descriptors;default 1024)
+minprocs=200                 ; (min. avail process descriptors;default 200)
+;environment=SSHPASS=$SSHPASS
+
+
+; the below section must remain in the config file for RPC
+; (supervisorctl/web interface) to work, additional interfaces may be
+; added by defining them in separate rpcinterface: sections
+[rpcinterface:supervisor]
+supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
+
+[supervisorctl]
+serverurl=unix:///tmp/vpnsupervisor.sock ; use a unix:// URL  for a unix socket
+
+;[program:itun]
+;command=bash -c "sshpass -e sshuttle -vr %(ENV_ITUN_PROXY_TARGET)s 10.0.212.0/24 10.0.214.0/24 10.0.209.0/24 10.0.200.0/24 199.38.140.0/24 10.0.208.0/24 10.0.203.0/24 10.0.202.0/24 10.0.209.0/24 10.1.207.0/24 199.38.140.0/24 10.1.204.12 10.0.215.0/24"
+;redirect_stderr=true
+;autostart=false
+;autorestart=true
+
+;[program:etun]
+;command=bash -c "sshuttle -r %(ENV_ETUN_PROXY_TARGET)s -X .subnets_gd -X .subnets_an -x 192.168.0.0/16 0/0"
+;redirect_stderr=true
+;autostart=false
+;autorestart=true
+
+
+{% for tunnel in tunnels %}
+[program:{{ tunnel.name }}]
+command=bash -c "{{tunnel.proxy.wrap_cmd}} sshuttle -r {{ tunnel.proxy.target}}{%for include in tunnel.forwards.include%} {{include}}{%endfor%} {%for exclude in tunnel.forwards.exclude%}-x {{exclude}} {%endfor%}"
+autostart=false
+autorestart=true
+redirect_stderr=true
+{% endfor %}
+
+
+;[program:vpnstats]
+;command=python -c 'import no_you_talk_to_the_hand as hand; hand.emit_status_changes()'
+;autorestart=true
+;stdout_capture_maxbytes=1MB
+
+
+[eventlistener:vpnmon]
+command=python -c 'import no_you_talk_to_the_hand as hand; hand.vpnmonitor()'
+numprocs=1
+autorestart=true
+events=TICK_60
+

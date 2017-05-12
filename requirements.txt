@@ -1,0 +1,5 @@
+click==6.7
+PyYAML==3.12
+supervisor==3.3.1
+requests==2.10.0
+Jinja2==2.8

@@ -1,0 +1,142 @@
+#
+#  Ignore file based on template from https://help.github.com/articles/ignoring-files
+#
+
+
+.env
+
+# Compiled source #
+###################
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.so
+*.pyc
+
+# Packages #
+############
+# It's better to unpack these files and commit the raw source because
+# git has its own built in compression methods.
+*.7z
+*.jar
+*.rar
+*.zip
+*.gz
+*.bzip
+*.bz2
+*.xz
+*.lzma
+
+#packing-only formats
+*.iso
+*.tar
+
+#package management formats
+*.dmg
+*.xpi
+*.gem
+*.egg
+*.deb
+*.rpm
+
+
+# Java Package Files #
+######################
+*.jar
+*.war
+*.ear
+
+# Logs and databases #
+######################
+*.log
+*.sql
+*.sqlite
+
+# Maven build output
+######################
+target/
+**/*.versionsBackup
+
+# OS generated files #
+######################
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+ehthumbs.db
+Thumbs.db
+.AppleDouble
+.LSOverride
+
+# Eclipse artifacts #
+#####################
+*.pydevproject
+.project
+.metadata
+bin/**
+tmp/**
+tmp/**/*
+*.tmp
+*.bak
+*.swp
+*~.nib
+local.properties
+.classpath
+.settings/
+.loadpath
+
+# External tool builders
+.externalToolBuilders/
+
+# Locally stored "Eclipse launch configurations"
+*.launch
+
+# CDT-specific
+.cproject
+
+# PDT-specific
+.buildpath
+
+
+# release artifacts
+#####################
+**pom.xml.versionsBackup
+
+
+# CVS artifacts #
+######################
+/CVS/*
+*/CVS/*
+.cvsignore
+*/.cvsignore
+
+
+# Intelli artifacts #
+######################
+*.iml
+*.ipr
+*.iws
+.idea/
+
+
+# VI artifacts #
+######################
+.*.s[a-w][a-z]
+*.un~
+Session.vim
+.netrwhist
+*~
+
+
+# Virtualization
+.vagrant
+
+
+
+**.ipynb_checkpoints
+**.egg*
+

@@ -247,15 +247,7 @@ def get_supervisor():
 @click.group()
 def cli():
     """This script controls a supervisord daemon, which in turns controls processes that manage
-       tunnels that should run whenever the GD vpn is connected
-
-       The main inputs required are the proxy targets. These can be provided via start command parameters
-        (>nyttth start --help) or in ~/.nyttth.yml. An example config file looks like this
-
-        \b
-        ETUN_PROXY_TARGET: 192.168.1.12
-        ITUN_PROXY_TARGET: paul.nelson@fsd-jp01.an.local
-        ITUN_PROXY_PASSWORD: mypass
+       tunnels that should run whenever the vpn is connected
    """
     pass
 

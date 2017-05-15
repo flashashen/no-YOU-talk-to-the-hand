@@ -84,7 +84,7 @@ tunnels:
         - *HOST_CORP_SECURE_DB
 
 
-  # Forward everything not destined for a private address though a non-corporate proxy
+  # Forward everything not destined for a corporate networks though a non-corporate proxy
   personal:
     depends: vpn
     proxy:

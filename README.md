@@ -1,21 +1,21 @@
 # no, *You* talk to the hand !
 
-Work VPN killing you? If you're bad at organizing your ssh tunnels and of tired manually setting up your web proxy to avoid the 'talk to the hand' message when you want to check your private email or jfiddle or similar malicious site then yaml + sshuttle + supervisord make a nice combination to organize and automate all your indirections due to corporate network security. 
+Work VPN killing you? Bad at organizing all your ssh tunnels? Tired of fooling with your web proxy settings? Tried to check your private email and been told by a cute corporate mascot to talk to the hand? If so, then yaml + sshuttle + supervisord make a nice combination to organize and automate all your indirections (all those wasted hours) necessitated by corporate network security. 
 
-(I'm going to ignore the technical differences between tunnels, proxies forwards and just lump them all into 'tunnels')
+(I'm going to ignore whatever technical differences between tunnels, proxies forwards and just lump them all into 'tunnels')
 
 
 ## Features
 
 - Establishes automatically when VPN connect is detected
 - Bypass corporate web proxy without fooling with system settings or Firefox (thanks to [sshuttle](https://github.com/sshuttle/sshuttle) )
-- Supports any number of simultaneous tunnels/proxies/forwards (thanks to [sshuttle](https://github.com/sshuttle/sshuttle) )
-- YAML based configuration for defining your forwarding / proxy rules
-- Supports multiple roots. Have multiple vpns that require separate tunnels? Define them in one place and only the related tunnels are started when you connect
-- Supportes nested dependencies. For example, a tunnel from an app server to database can wait until an antecedent tunnel to the production network is established via a jump server
+- Supports any number of simultaneous tunnels (thanks to [sshuttle](https://github.com/sshuttle/sshuttle) )
+- YAML based configuration for defining your tunnels
+- Supports multiple root VPNs. Have multiple vpns that require separate tunnels? Define them in one place and only the related tunnels are started when you connect
+- Supportes nested dependencies. For example, a tunnel from an app server to database can wait until a pre-requisite tunnel to the production network is established
 
 
-An example configuration:
+An example configuration excerpt:
 
 ```yaml
 tunnels:
@@ -54,7 +54,7 @@ tunnels:
       include:
         - *SUBNETS_CORP_RESTRICTED
       exclude:
-        - *HOST_CORP_SECURE_DB
+        - *HOST_CORP_SEURE_DB
 
   # another forward to access a secure server from a whitelisted machine. A common scenario is accessing
   # a database that only allows connections from specific application servers.

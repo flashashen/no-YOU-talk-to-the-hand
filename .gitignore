@@ -139,4 +139,6 @@ Session.vim
 
 **.ipynb_checkpoints
 **.egg*
+supervisord.conf
+config.yml
 

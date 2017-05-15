@@ -3,7 +3,7 @@ import os
 
 setup(
     name='no_you_talk_to_the_hand',
-    version='0.2',
+    version='0.3',
     py_modules=['no_you_talk_to_the_hand'],
     install_requires=[
         'Click',
@@ -11,16 +11,9 @@ setup(
         'pyyaml',
         'jinja2'
     ],
-    entry_points='''
-        [console_scripts]
-        no_you_talk_to_the_hand=no_you_talk_to_the_hand:cli
-    ''',
-    # data_files=[
-    #     ('etc', ['config.yml'])
-    # ]
-    package_data={
-        '': ['.subnets*'],
-        '': ['supervisord.conf'],
-    }
-
+    #  entry points won't work until the config location is moved
+    # entry_points='''
+    #     [console_scripts]
+    #     no_you_talk_to_the_hand=no_you_talk_to_the_hand:cli
+    # ''',
 )

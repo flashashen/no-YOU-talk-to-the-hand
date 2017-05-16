@@ -2,31 +2,33 @@
 
 Work VPN killing you? Bad at organizing all your ssh tunnels? Tired of fooling with your web proxy settings? Tried to check your private email and been told by a cute corporate mascot to talk to the hand? If so, then yaml + sshuttle + supervisord make a nice combination to organize and automate all your indirections (all those wasted hours) necessitated by corporate network security. 
 
+Works with Linux and MacOS since sshuttle does.
+
 (I'm going to ignore whatever technical differences between tunnels, proxies forwards and just lump them all into 'tunnels')
 
 
 ## Features
 
 - Establishes automatically when VPN connect is detected
-- Bypass corporate web proxy without fooling with system settings or Firefox (thanks to [sshuttle](https://github.com/sshuttle/sshuttle) )
+- Enters passwords for you if configured to do so. ([sshpass](https://gist.github.com/arunoda/7790979) required)
+- Bypass corporate web proxy without fooling with system proxy settings or Firefox (thanks to [sshuttle](https://github.com/sshuttle/sshuttle) )
 - Supports any number of simultaneous tunnels (thanks to [sshuttle](https://github.com/sshuttle/sshuttle) )
 - YAML based configuration for defining your tunnels
-- Supports multiple root VPNs. Have multiple vpns that require separate tunnels? Define them in one place and only the related tunnels are started when you connect
+- Supports multiple root VPNs. Have multiple vpns that require separate tunnels? Define them in one place and only the relevant tunnels are established when your is connected
 - Supportes nested dependencies. For example, a tunnel from an app server to database can wait until a pre-requisite tunnel to the production network is established
 
 
 An example configuration excerpt:
 
 ```yaml
-tunnels:
 
+  # Watch for connection to corporate VPN
   vpn:
     check:
       host: *HOST_CORP_JUMP
       port: 22
 
-
-  # Forward everything not destined for a corporate networks though a non-corporate proxy
+  # Bypass corporate network for web browsing, skype, streaming music, etc.
   personal:
     depends: vpn
     proxy:
@@ -39,7 +41,7 @@ tunnels:
         - *SUBNETS_CORP_RESTRICTED
         
   # Forward traffic to restricted corporate subnets through the jump server.
-  corporate:
+  corp_restricted:
     depends: vpn
     proxy:
       host: *HOST_CORP_JUMP
@@ -56,16 +58,14 @@ tunnels:
       exclude:
         - *HOST_CORP_SEURE_DB
 
-  # another forward to access a secure server from a whitelisted machine. A common scenario is accessing
-  # a database that only allows connections from specific application servers.
-  whitelisted:
+  # Tunnel to access a secure db server from a privliged app server. This tunnel depends 
+  # on the 
+  prod_db:
     depends: corporate
     proxy:
       host: *HOST_CORP_PRIVILEGED_APP
       user: *CORP_USER
       pass: *CORP_PASS
-    # Skip the check config since there is no direct way to test since it's not simply ssh access we're looking
-    # for, but rather access to a whiltelisted service that we don't generically know how to talk to.
     forwards:
       # includes and excludes. items can be ips, subnets, or lists of ip/subnets.
       include:
@@ -78,8 +78,10 @@ tunnels:
 For now:
 
 - git clone https://github.com/flashashen/no-YOU-talk-to-the-hand.git
+- cd no-YOU-talk-to-the-hand
 - pip install -r requirements.txt
 
+*Note* If you configure a password for the remote server then [sshpass](https://gist.github.com/arunoda/7790979) is required
 
 ## Running
 

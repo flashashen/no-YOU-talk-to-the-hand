@@ -1,27 +1,33 @@
-# no, *You* talk to the hand !
+# no,*You* talk to the hand!
 
-Work VPN killing you? Bad at organizing all your ssh tunnels? Tired of fooling with your web proxy settings? Tried to check your private email and been told by a cute corporate mascot to talk to the hand? If so, then yaml + sshuttle + supervisord make a nice combination to organize and automate all your indirections (all those wasted hours) necessitated by corporate network security. 
+I got tired getting the 'talk to the hand page' from the corporate web proxy, forgetting to bring up tunnels, re-entering my credentials over and over, tunnels dropping silently, having tunnel/proxy config in too many places, etc. I was pretty miserable.
 
-Works with Linux and MacOS since sshuttle does.
+**no-YOU-talk-to-the-hand** really has solved all these issues for me, combining sshuttle + supervisord + yaml
 
-(I'm going to ignore whatever technical differences between tunnels, proxies forwards and just lump them all into 'tunnels')
+The heaviest lifting for this project is done by **[sshuttle](https://github.com/sshuttle/sshuttle)** which is a godsend. SSH based tunneling is simple enough but sshuttle forwards all ports, supports included and excluded subnets, has powerful features I haven't even looked at yet, but best of all, works like a champ.
 
 
-## Features
 
-- Establishes automatically when VPN connect is detected
-- Enters passwords for you if configured to do so. ([sshpass](https://gist.github.com/arunoda/7790979) required)
-- Bypass corporate web proxy without fooling with system proxy settings or Firefox (thanks to [sshuttle](https://github.com/sshuttle/sshuttle) )
+(Going forward, I'm going to ignore whatever technical differences there are between tunnels and forwards and just call them 'tunnels'. Remote ssh servers through which trafffic is forwarded, I'll call proxies. I refer to 'VPN' quite a bit, but technically this is just a 'root' tunnel in the configuraiton that specifies no proxy setup or forwards)
+
+(Works with Linux and MacOS but not with Windows because that what sshuttle supports)
+
+## What it does
+
+- Sets up your tunnels automatically when your VPN connects
+- Takes down your tunnels automatically when your VPN disconnects
+- Keeps your tunnels up
+- Organizes your tunnels with simple, YAML configuration 
+- Enters passwords for you as needed ([sshpass](https://gist.github.com/arunoda/7790979) required)
+- Supports multiple root VPNs. Have multiple vpns that require separate tunnels? Define them in one place and only the relevant tunnels are established 
 - Supports any number of simultaneous tunnels (thanks to [sshuttle](https://github.com/sshuttle/sshuttle) )
-- YAML based configuration for defining your tunnels
-- Supports multiple root VPNs. Have multiple vpns that require separate tunnels? Define them in one place and only the relevant tunnels are established when your is connected
-- Supportes nested dependencies. For example, a tunnel from an app server to database can wait until a pre-requisite tunnel to the production network is established
+- Supportes nested dependencies. For example: (qa_db, prod_db) -- depends --> (corp_private) -- depends --> (corp_vpn)
 
 
-An example configuration excerpt:
+### Yaml replaces all your tunnel scripts/aliases, ssh setup with db tools, web proxy setup, etc.
 
 ```yaml
-
+    
   # Watch for connection to corporate VPN
   vpn:
     check:
@@ -38,7 +44,7 @@ An example configuration excerpt:
       include:
         - 0/0
       exclude:
-        - *SUBNETS_CORP_RESTRICTED
+        - *ALL_PRIVATE_ADDRESSES
         
   # Forward traffic to restricted corporate subnets through the jump server.
   corp_restricted:
@@ -59,9 +65,9 @@ An example configuration excerpt:
         - *HOST_CORP_SEURE_DB
 
   # Tunnel to access a secure db server from a privliged app server. This tunnel depends 
-  # on the 
+  # on corp_restricted being established
   prod_db:
-    depends: corporate
+    depends: corp_restricted
     proxy:
       host: *HOST_CORP_PRIVILEGED_APP
       user: *CORP_USER
@@ -70,6 +76,73 @@ An example configuration excerpt:
       # includes and excludes. items can be ips, subnets, or lists of ip/subnets.
       include:
         - *HOST_CORP_SECURE_DB
+```
+
+## Running
+
+#### Status - View status of all defined tunnels
+ 
+VPN down:
+
+``` 
+$ python no_YOU_talk_to_the_hand.py status
+
+Process:   run state       checkup
+----------------------------------------------------
+dbtun:     STOPPED         False
+etun:      STOPPED         False
+itun:      STOPPED         False
+qadb:      STOPPED         False
+rfindb:    STOPPED         False
+vpnmon:    RUNNING         N/A
+```
+
+VPN up:
+
+```
+$ python no_YOU_talk_to_the_hand.py status
+ 
+Process:   run state       checkup
+----------------------------------------------------
+dbtun:     RUNNING         True
+etun:      RUNNING         True
+itun:      RUNNING         True
+qadb:      RUNNING         True
+rfindb:    RUNNING         True
+vpnmon:    RUNNING         N/A
+```
+
+
+#### Start - Start the supervisord process and begin managing the configured tunnels
+
+```
+$ python no_you_talk_to_the_hand.py start
+```
+
+#### Stop - Stop supervisord process and all tunnels with it
+
+```
+$ python no_you_talk_to_the_hand.py stop
+```
+
+#### Tail - output a continuous tail of the vpn monitor that checks tunnel statuses and brings them up or down as needed.
+
+```
+$ python no_YOU_talk_to_the_hand.py tail
+2017-05-17 00:46:54,688 DEBUG nyttth: Check Results:
+2017-05-17 00:46:54,689 DEBUG nyttth: vpn up: True. Check type: socket
+2017-05-17 00:46:54,689 DEBUG nyttth: itun up: True. Check type: socket
+2017-05-17 00:46:54,689 DEBUG nyttth: qadb up: True. Check type: supervisor
+2017-05-17 00:46:54,689 DEBUG nyttth: dbtun up: True. Check type: supervisor
+2017-05-17 00:46:54,689 DEBUG nyttth: etun up: True. Check type: url
+2017-05-17 00:46:54,689 DEBUG nyttth: rfindb up: True. Check type: supervisor
+2017-05-17 00:47:04,970 DEBUG nyttth: Check Results:
+2017-05-17 00:47:04,970 DEBUG nyttth: vpn up: True. Check type: socket
+2017-05-17 00:47:04,970 DEBUG nyttth: itun up: True. Check type: socket
+2017-05-17 00:47:04,970 DEBUG nyttth: dbtun up: True. Check type: supervisor
+2017-05-17 00:47:04,970 DEBUG nyttth: qadb up: True. Check type: supervisor
+2017-05-17 00:47:04,970 DEBUG nyttth: etun up: True. Check type: url
+2017-05-17 00:47:04,970 DEBUG nyttth: rfindb up: True. Check type: supervisor
 ```
 
 
@@ -81,22 +154,4 @@ For now:
 - cd no-YOU-talk-to-the-hand
 - pip install -r requirements.txt
 
-*Note* If you configure a password for the remote server then [sshpass](https://gist.github.com/arunoda/7790979) is required
-
-## Running
-
-#### Help - Run the script with no parameters 
-
->python no_you_talk_to_the_hand.py
-
-#### Start - Start the supervisord process and begin managing the configured tunnels
-
->python no_you_talk_to_the_hand.py start
-
-#### Stop - Stop supervisord process and all tunnels with it
-
->python no_you_talk_to_the_hand.py stop
-
-#### Tail - output a continuous tail of the vpn monitor that checks tunnel statuses and brings them up or down as needed.
-
->python no_you_talk_to_the_hand.py tail
+*Note* If you configure a password for any remote server then [sshpass](https://gist.github.com/arunoda/7790979) is required

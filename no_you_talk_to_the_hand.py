@@ -64,14 +64,13 @@ def handle_down_tunnel(check_future):
             if get_proxy_cfg(result.name):
                 supervisor = get_supervisor()
                 proc = supervisor.getProcessInfo(result.name)
-                log.info('{} is down. will make running based on supervisor state: {}'.format(result.name, proc['statename']))
                 if proc_started(proc):
                     if proc_upseconds(proc) > 60:
-                        log.info('restarting {}'.format(result.name))
+                        log.info('{} is down. restarting'.format(result.name))
                         supervisor.stopProcess(result.name)
                         supervisor.startProcess(result.name)
                 else:
-                    log.info('starting {}'.format(result.name))
+                    log.info('{} is down. starting'.format(result.name))
                     supervisor.startProcess(result.name)
             else:
                 log.debug('{} is down. Nothing to do since there is no proxy configuration.'.format(result.name))

@@ -1,8 +1,9 @@
 # no,*YOU* talk to the hand!
 
+Access all your corporate stuff and web stuff at the same time without thinking
 
 **You want this if you're being worn out by:**
-- Seeing the 'talk to the hand page' from the corporate web proxy
+- Seeing the 'talk to the hand' page from the corporate web proxy/filter
 - Re-entering ssh credentials over and over (key based auth isn't allowed everywhere)
 - Tunnel/proxy setup in too many places and in too many ways
 - Not having application specific tunnels (dbvis, datagrip) available from the console
@@ -11,7 +12,8 @@
 
 no-YOU-talk-to-the-hand really has **solved all these issues** for me, by providing a straight-forward combination of [sshuttle](https://github.com/sshuttle/sshuttle) for the heavy network lifting, supervisord to keep everything up and manageable, and yaml to keep it simple and organized
 
-Works with Linux and MacOS but **not MS Windows** because that is what sshuttle supports
+Works with Linux and MacOS but **not MS Windows** due to sshuttle
+
 
 ## What it does
 

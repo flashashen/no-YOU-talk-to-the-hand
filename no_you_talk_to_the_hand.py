@@ -11,12 +11,17 @@ import jinja2
 
 
 import logging
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
-log = logging.getLogger('nyttth')
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("requests").setLevel(logging.WARNING)
+logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+log = None
 
+def init_logging(level = logging.INFO):
+    global log
+    log = logging.getLogger('nyttth')
+    log.setLevel(level)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("requests").setLevel(logging.WARNING)
 
+init_logging()
 
 
 from collections import namedtuple
@@ -24,29 +29,38 @@ CheckResult = namedtuple('CheckResult', 'name status type')
 
 
 
+def get_check_type(tun_chk_cfg):
+    if not tun_chk_cfg:
+        return 'supervisor'
+    elif 'url' in tun_chk_cfg and tun_chk_cfg['url']:
+        return 'url'
+    else:
+        return 'socket'
+
+
 def check_tunnel(tunnel_name):
 
     chk = get_check_cfg(tunnel_name)
-
-    if not chk:
-        return CheckResult(tunnel_name, proc_started(get_supervisor().getProcessInfo(tunnel_name)), 'supervisor')
+    type = get_check_type(chk)
 
     # log.trace('{} check config: {} .. '.format(tunnel_name, chk))
     result = None
     try:
-        type = 'url'
-        if 'url' in chk and chk['url']:
+        if type == 'supervisor':
+            result = 'up' if proc_started(get_supervisor().getProcessInfo(tunnel_name)) else 'down'
+        elif type == 'url':
             rsp = requests.head(chk['url'])
-            result = rsp.status_code >= 200 and rsp.status_code < 300
-        else:
-            type = 'socket'
+            result = 'up' if rsp.status_code >= 200 and rsp.status_code < 300 else 'down'
+        elif type == 'socket':
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.settimeout(2)
             s.connect((chk['host'],int(chk['port'])))
-            result = True
+            result = 'up'
             s.close()
+        else:
+            result =  'invalid'
     except Exception as e:
-        result = False
+        result = 'down'
 
     # log.trace('{}: {}'.format(tunnel_name, result))
     return CheckResult(tunnel_name, result, type)
@@ -57,7 +71,7 @@ def handle_down_tunnel(check_future):
     result = check_future.result()
     # write_stderr('{} {} check: {}\n'.format(result.name, result.type, result.status))
 
-    if not result.status:
+    if result.status == 'down':
         try:
             # start or restart depending on supervisor status. If this is a
             # check-only tunnel (no proxy defined) then skip.
@@ -73,39 +87,55 @@ def handle_down_tunnel(check_future):
                     log.info('{} is down. starting'.format(result.name))
                     supervisor.startProcess(result.name)
             else:
-                log.debug('{} is down. Nothing to do since there is no proxy configuration.'.format(result.name))
+                log.debug('{} is down'.format(result.name))
         except Exception as e:
             log.error(str(e))
 
 
-def check_dependent_tunnels(tunnel_name = None, check_only=False):
+def stop_dependent_tunnels(tunnel_name):
+    for tunnel in get_tunnel_dependents(tunnel_name):
+        if proc_started(get_supervisor().getProcessInfo(tunnel)):
+            log.info('{} depends on {} which is down. stopping'.format(tunnel, tunnel_name))
+            get_supervisor().stopProcess(tunnel)
+            # continue stopping recursively
+            stop_dependent_tunnels(tunnel)
 
-    # if tunnel_name:
-    #     log.debug('{}: checking dependent tunnels ...'.format(tunnel_name))
 
-    tunnels = get_tunnel_dependents(tunnel_name);
+def check_dependent_tunnels(check_result_parent = None, check_only=False):
+
+    tunnels = get_tunnel_dependents(
+        check_result_parent.name if check_result_parent else None);
+
     if not tunnels:
         # log.debug('no dependents\n')
         return {}
 
 
     statuses = []
-    with futures.ThreadPoolExecutor(max_workers=10) as executor:
-        check_futures = []
-        for tunnel_name in tunnels:
-            future = executor.submit(check_tunnel, tunnel_name)
-            if not check_only:
-                future.add_done_callback(handle_down_tunnel)
-            check_futures.append(future)
+    if check_result_parent and not check_result_parent.status == 'up':
+        # If parent is not up, then skip children
+        statuses = [CheckResult(tunnel_name,'skipped',get_check_type(get_check_cfg(tunnel_name)))
+            for tunnel_name in tunnels ]
+    else:
+        # Use a thread pool to perform the checks of child tunnels
+        with futures.ThreadPoolExecutor(max_workers=10) as executor:
+            check_futures = []
+            for tunnel_name in tunnels:
+                future = executor.submit(check_tunnel, tunnel_name)
+                if not check_only:
+                    future.add_done_callback(handle_down_tunnel)
+                check_futures.append(future)
 
-        statuses = [future.result() for future in futures.as_completed(check_futures)]
+            statuses = [future.result() for future in futures.as_completed(check_futures)]
 
 
-    # For tunnels that are up, check dependents. This could be optimized so that only dependents are
-    # checked since an up dependent implies an up antecedent (provided the dependent can be checked)
+    # Recurse though child tunnels. If this tunnel is down then just stop everything depedning on it
     for check_result in list(statuses):
-        if check_result.status or check_only:
-            statuses.extend(check_dependent_tunnels(check_result.name, check_only))
+        if check_result.status != 'down' or check_only:
+            statuses.extend(check_dependent_tunnels(check_result, check_only))
+        else:
+            # Make sure dependent tunnels are stopped. Don't bother gathering status as we may no longer use it
+            stop_dependent_tunnels(check_result.name)
 
     return statuses
 
@@ -123,19 +153,16 @@ def proc_upseconds(proc):
     return 0
 
 
-
-
-
 def vpnmonitor():
 
     while True:
         #
         #
         # headers, payload = childutils.listener.wait()
+        log.debug('checking tunnels')
         results = check_dependent_tunnels()
-        log.debug('Check Results:')
-        for result in results:
-            log.debug('{} up: {}. Check type: {}'.format(result.name, result.status, result.type))
+        # for result in results:
+        #     log.debug('{} check: {}'.format(result.name, result.status))
         time.sleep(10)
         # childutils.listener.ok()
 
@@ -162,12 +189,16 @@ def get_config(config='config.yml'):
 
     global cfg
     if not cfg:
-        log.info('reading config from {}'.format(config))
+        log.debug('reading config from {}'.format(config))
         path = config
         cfg = dict()
         if os.path.isfile(path):
             with open(path, 'r') as stream:
                 cfg = yaml.load(stream)
+
+        if 'log_level' in cfg:
+            # print('setting log level to {}'.format(cfg['log_level']))
+            init_logging(cfg['log_level'])
 
     return cfg
 
@@ -286,11 +317,11 @@ def tail(tunnel):
         result = get_supervisor().tailProcessStdoutLog(tunnel, offset, numbytes)
         # If more data was written to the log or if we've failed to read whats already there
         if result[1] > offset or result[2] :
-            if result[2]:
+            # if result[2]:
                 # All the data has not been read. Re-read entire buffer. If the entire buffer is not
                 # read then we get the latter part and the data at teh beginning (at the offset) is
                 # skipped
-                result = get_supervisor().tailProcessStdoutLog(tunnel, offset, result[1]-offset)
+            result = get_supervisor().tailProcessStdoutLog(tunnel, offset, result[1]-offset)
 
             # all the data should have been read. Set the new offset to the end of the file
             offset = result[1]
@@ -305,13 +336,24 @@ def tail(tunnel):
 def status():
 
     check_statuses = { check_result.name:check_result.status for check_result in check_dependent_tunnels(None, True) }
+    sup_states = { proc['name']:proc for proc in get_supervisor().getAllProcessInfo() }
 
-    supstate = get_supervisor().getAllProcessInfo()
-    print '\nProcess:\trun state\tup\n----------------------------------------------------'
-    for proc in supstate:
-        print '{}:\t\t{}\t\t{}'.format(
-            proc['name'],proc['statename'],
-            check_statuses[proc['name']] if proc['name'] in check_statuses else 'N/A')
+    out = [ {'name':name,
+            'state':sup_states[name]['statename'] if name in sup_states else 'N/A',
+            'checkup': check_statuses[name],
+            'depends':config['depends'] if 'depends' in config else ''}
+        for name, config in get_config()['tunnels'].iteritems() ]
+
+
+    out.sort()
+    longest = len(max(get_config()['tunnels'], key=lambda t: len(t)))
+    header = 'Process'.ljust(longest + 4) + 'Depends'.ljust(10) + 'State'.ljust(10) + 'Check'.ljust(10)
+
+    print('')
+    print(header)
+    print ''.ljust(len(header),'-')
+    for info in sorted(out,key=lambda x: x['depends']):
+        print info['name'].ljust(longest + 4) + info['depends'].ljust(10) + info['state'].ljust(10) + info['checkup'].ljust(10)
     print('')
 
 
@@ -344,7 +386,7 @@ def start(config):
     :return:
     """
 
-    get_config(os.path.expanduser(config))
+    cfg = get_config(os.path.expanduser(config))
 
     # if supervisor_already_running():
     #     print 'Supervisord is already running.'

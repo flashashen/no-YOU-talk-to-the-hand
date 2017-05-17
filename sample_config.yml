@@ -38,6 +38,7 @@ HOST_CORP_SECURE_DB: &HOST_CORP_SECURE_DB 10.1.3.0/24
 HOST_PERSONAL_PROXY: &HOST_PERSONAL_PROXY 192.168.1.2
 
 
+log_level: DEBUG
 
 #
 #   Setup the forwarding rules (tunnels/proxies)

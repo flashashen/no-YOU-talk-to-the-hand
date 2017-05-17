@@ -83,9 +83,28 @@ depends: corp_restricted
 
 ## Running
 
+Below are some sample commands.
+
+**Note:** Before running a configuration file called config.yml must be created in the project directory. Look at sample_config.yml as a start.
+
+
+#### Start - Start the supervisord process and begin managing the configured tunnels
+
+```
+$ python no_you_talk_to_the_hand.py start
+```
+
+
+#### Stop - Stop supervisord process and all tunnels with it
+
+```
+$ python no_you_talk_to_the_hand.py stop
+```
+
+
 #### Status - View status of all defined tunnels
  
-VPN down:
+when VPN is down:
 
 ``` 
 $ python no_YOU_talk_to_the_hand.py status
@@ -100,7 +119,7 @@ itun      vpn       STOPPED   skipped
 qadb      vpn       STOPPED   skipped   
 ```
 
-VPN up:
+when VPN is up:
 
 ```
 $ python no_YOU_talk_to_the_hand.py status
@@ -115,22 +134,9 @@ itun      vpn       RUNNING   up
 qadb      vpn       RUNNING   up        
 ```
 
-
-#### Start - Start the supervisord process and begin managing the configured tunnels
-
-```
-$ python no_you_talk_to_the_hand.py start
-```
-
-#### Stop - Stop supervisord process and all tunnels with it
-
-```
-$ python no_you_talk_to_the_hand.py stop
-```
-
 #### Tail - Tail the tunnel monitor that checks tunnel statuses and brings them up or down as needed.
 
-VPN Disconnect:
+when VPN Disconnects:
 
 ```
 $ python no_YOU_talk_to_the_hand.py tail
@@ -151,7 +157,7 @@ $ python no_YOU_talk_to_the_hand.py tail
 2017-05-17 11:52:43,345 DEBUG nyttth: vpn is down
 ```
 
-VPN Connect:
+when VPN Connects:
 
 ```
 2017-05-17 11:52:53,357 DEBUG nyttth: checking tunnels

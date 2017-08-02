@@ -136,7 +136,8 @@ Session.vim
 .vagrant
 
 
-
+build
+dist
 **.ipynb_checkpoints
 **.egg*
 supervisord.conf

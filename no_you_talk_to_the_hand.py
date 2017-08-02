@@ -1,10 +1,9 @@
 #!/usr/bin/python
 
-import sys, os, json, requests, socket, time, subprocess, six
+import sys, os, requests, socket, time, subprocess, six
 from concurrent import futures
 
 import yaml
-import supervisor
 from supervisor import childutils
 import click
 import jinja2
@@ -13,6 +12,162 @@ import jinja2
 import logging
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
 log = None
+
+
+
+SAMPLE_CONFIG = """
+#
+#
+#     Sample configuration for 'no, YOU talk to the hand' (nyttth)
+#
+#
+
+
+
+#
+#     Define variables
+#
+
+CORP_USER: &CORP_USER youruser
+CORP_PASS: &CORP_PASS yourpass
+
+
+URL_PERSONAL_PROXY_CHECK: &URL_PERSONAL_PROXY_CHECK https://twitter.com/
+
+SUBNETS_LOCAL: &SUBNETS_LOCAL
+    - 192.168.0.0/16
+
+SUBNETS_CORP_RESTRICTED: &SUBNETS_CORP_RESTRICTED
+    # Forward all private addresses as an example
+    - 172.16.0.0/12
+    - 10.0.0.0/8
+
+
+
+# The jump server to access subnets not provided by simple VPN access
+HOST_CORP_JUMP: &HOST_CORP_JUMP 10.1.1.1
+
+# Once we can access the internal subnet though the initial jump server, we need
+# another forward to access a secure db instance via a privileged app server
+HOST_CORP_PRIVILEGED_APP: &HOST_CORP_PRIVILEGED_APP 10.1.2.1
+HOST_CORP_SECURE_DB: &HOST_CORP_SECURE_DB 10.1.3.0/24
+
+# Finally, a proxy server for all other traffic like web browsing and skype.
+HOST_PERSONAL_PROXY: &HOST_PERSONAL_PROXY 192.168.1.2
+
+
+log_level: DEBUG
+
+#
+#   Setup the forwarding rules (tunnels/proxies)
+#
+tunnels:
+
+  # vpn is an external condition that we simply check for
+  vpn:
+    check:
+      host: *HOST_CORP_JUMP
+      port: 22
+
+  # If vpn is up, the forward traffic to restricted corporate subnets through the jump server.
+  corporate:
+    depends: vpn
+    proxy:
+      host: *HOST_CORP_JUMP
+      user: *CORP_USER
+      pass: *CORP_PASS
+    # verify by checking ssh access to the privileged app server
+    check:
+      host: *HOST_CORP_PRIVILEGED_APP
+      port: 22
+    forwards:
+      # includes and excludes. items can be ips, subnets, or lists of ip/subnets.
+      include:
+        - *SUBNETS_CORP_RESTRICTED
+      exclude:
+        - *HOST_CORP_SECURE_DB
+
+  # another forward to access a secure server from a whitelisted machine. A common scenario is accessing
+  # a database that only allows connections from specific application servers.
+  whitelisted:
+    depends: corporate
+    proxy:
+      host: *HOST_CORP_PRIVILEGED_APP
+      user: *CORP_USER
+      pass: *CORP_PASS
+    # Skip the check config since there is no direct way to test since it's not simply ssh access we're looking
+    # for, but rather access to a whiltelisted service that we don't generically know how to talk to.
+    forwards:
+      # includes and excludes. items can be ips, subnets, or lists of ip/subnets.
+      include:
+        - *HOST_CORP_SECURE_DB
+
+
+  # Forward everything not destined for a corporate networks though a non-corporate proxy
+  personal:
+    depends: vpn
+    proxy:
+      host: *HOST_PERSONAL_PROXY
+      user:
+      pass:
+    # check access to Twitter to determine if corp web proxy is being properly bypassed
+    check:
+      # instead of an ip and port, a check target can be a url for an http check
+      url: *URL_PERSONAL_PROXY_CHECK
+    forwards:
+      # includes and excludes. items can be ips, subnets, or lists of ip/subnets.
+      include:
+        - 0/0
+      exclude:
+        - *SUBNETS_LOCAL
+        - *SUBNETS_CORP_RESTRICTED
+        - *HOST_CORP_SECURE_DB
+"""
+
+
+SUPERVISOR_TEMPLATE = """
+[unix_http_server]
+file=/tmp/vpnsupervisor.sock   ; (the path to the socket file)
+
+[supervisord]
+logfile=/tmp/supervisord.log ; (main log file;default $CWD/supervisord.log)
+logfile_maxbytes=50MB        ; (max main logfile bytes b4 rotation;default 50MB)
+logfile_backups=10           ; (num of main logfile rotation backups;default 10)
+loglevel=info                ; (log level;default info; others: debug,warn,trace)
+pidfile=/tmp/supervisord.pid ; (supervisord pidfile;default supervisord.pid)
+nodaemon=false               ; (start in foreground if true;default false)
+minfds=1024                  ; (min. avail startup file descriptors;default 1024)
+minprocs=200                 ; (min. avail process descriptors;default 200)
+;environment=SSHPASS=$SSHPASS
+
+
+; the below section must remain in the config file for RPC
+; (supervisorctl/web interface) to work, additional interfaces may be
+; added by defining them in separate rpcinterface: sections
+[rpcinterface:supervisor]
+supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
+
+[supervisorctl]
+serverurl=unix:///tmp/vpnsupervisor.sock ; use a unix:// URL  for a unix socket
+
+
+{% for tunnel in tunnels %}
+[program:{{ tunnel.name }}]
+command=bash -c "{{tunnel.proxy.wrap_cmd}} sshuttle -r {{ tunnel.proxy.target}}{%for include in tunnel.forwards.include%} {{include}}{%endfor%} {%for exclude in tunnel.forwards.exclude%}-x {{exclude}} {%endfor%}"
+autostart=false
+autorestart=false
+redirect_stderr=true
+startretries=2
+{% endfor %}
+
+
+[program:vpnmon]
+command=python -c 'import no_you_talk_to_the_hand as hand; hand.vpnmonitor()'
+autostart=true
+autorestart=true
+redirect_stderr=true
+"""
+
 
 def init_logging(level = logging.INFO):
     global log
@@ -43,17 +198,19 @@ def check_tunnel(tunnel_name):
     chk = get_check_cfg(tunnel_name)
     type = get_check_type(chk)
 
+    timeout = 2
+
     # log.trace('{} check config: {} .. '.format(tunnel_name, chk))
     result = None
     try:
         if type == 'supervisor':
             result = 'up' if proc_started(get_supervisor().getProcessInfo(tunnel_name)) else 'down'
         elif type == 'url':
-            rsp = requests.head(chk['url'])
+            rsp = requests.head(chk['url'], timeout=timeout)
             result = 'up' if rsp.status_code >= 200 and rsp.status_code < 300 else 'down'
         elif type == 'socket':
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(2)
+            s.settimeout(timeout)
             s.connect((chk['host'],int(chk['port'])))
             result = 'up'
             s.close()
@@ -163,7 +320,7 @@ def vpnmonitor():
         results = check_dependent_tunnels()
         # for result in results:
         #     log.debug('{} check: {}'.format(result.name, result.status))
-        time.sleep(10)
+        time.sleep(6)
         # childutils.listener.ok()
 
 
@@ -183,22 +340,55 @@ def vpnmonitor():
 #     return running
 
 
+def propmt_yn():
+    # raw_input returns the empty string for "enter"
+    yes = set(['yes','y', 'ye', ''])
+    no = set(['no','n'])
+
+    while True:
+        choice = raw_input().lower()
+        if choice in yes:
+            return True
+        elif choice in no:
+            return False
+        else:
+            sys.stdout.write("Please respond with 'yes' or 'no'")
+
 
 cfg = None
-def get_config(config='config.yml'):
+def get_config(config='~/.nyttth/config.yml'):
 
     global cfg
     if not cfg:
-        log.debug('reading config from {}'.format(config))
-        path = config
+        cfgpath = os.path.expanduser(config)
+        log.debug('reading config from {}'.format(cfgpath))
         cfg = dict()
-        if os.path.isfile(path):
-            with open(path, 'r') as stream:
-                cfg = yaml.load(stream)
 
+        if os.path.isfile(cfgpath):
+            with open(cfgpath, 'r') as stream:
+                cfg = yaml.load(stream)
+        else:
+            print 'config not found at {}. Create y/n?'.format(cfgpath)
+            if propmt_yn():
+                import errno
+                try:
+                    os.makedirs(os.path.dirname(cfgpath))
+                except OSError as e:
+                    if e.errno != errno.EEXIST:
+                        raise
+                with open(cfgpath, 'w') as cfg_file:
+                    cfg_file.write(SAMPLE_CONFIG)
+                print 'Sample configuration has been written to {}.\n You will need to edit '.format(cfgpath) + \
+                      'this configuration with real values from your networking environment. Exiting.'
+            else:
+                print 'Exiting'
+            exit()
         if 'log_level' in cfg:
             # print('setting log level to {}'.format(cfg['log_level']))
-            init_logging(cfg['log_level'])
+            log.setLevel(logging.getLevelName(cfg['log_level']))
+
+        cfg['basedir'] = os.path.dirname(cfgpath)
+        cfg['supervisor.conf'] = os.path.join(cfg['basedir'],'supervisord.conf')
 
     return cfg
 
@@ -262,12 +452,12 @@ def get_tmpl_ctx():
 
 
 def generate_supervisor_conf(ctx):
-    return jinja2.Environment(loader=jinja2.FileSystemLoader('./')).get_template('supervisord.conf.j2').render(ctx)
+    return jinja2.Template(SUPERVISOR_TEMPLATE).render(ctx)
 
 
 def write_supervisor_conf():
-    with open('supervisord.conf', 'w') as f:
-        f.write(generate_supervisor_conf(get_tmpl_ctx()))
+    with open(cfg['supervisor.conf'], 'w') as f:
+        f.write(jinja2.Template(SUPERVISOR_TEMPLATE).render(get_tmpl_ctx()))
 
 
 def get_supervisor():
@@ -377,7 +567,7 @@ def stop():
 
 
 @cli.command('start')
-@click.option('--config', '-c', default='config.yml', help='specify config file')
+@click.option('--config', '-c', default='~/.nyttth/config.yml', help='specify config file')
 def start(config):
     """
     Start the supervisor daemon that keeps tunnels up
@@ -386,35 +576,22 @@ def start(config):
     :return:
     """
 
-    cfg = get_config(os.path.expanduser(config))
-
-    # if supervisor_already_running():
-    #     print 'Supervisord is already running.'
-    #     return 0
-
-
-    #
-    # config = get_config()
+    cfg = get_config(config)
     write_supervisor_conf()
 
-    # for tunnel in config['tunnels']:
-    #     p = get_proxy_cfg(tunnel)
-    #     if 'pass' in p and p['pass']
-    #
 
     try :
-
-        subprocess.call("supervisord")
+        subprocess.call("supervisord".format(cfg['basedir']), cwd=cfg['basedir'])
 
     except Exception as e:
-        if 'already listening' in e.output:
+        if 'already listening' in str(e):
             print('Supervisor appears to already be running')
         else:
-            print e.output
+            print str(e)
 
         return 1
 
-    print("Supervisor is running. Run supervisorctl for an interactive shell if you're curious")
+    print("Supervisor is running.")
 
 
 if __name__ == '__main__':

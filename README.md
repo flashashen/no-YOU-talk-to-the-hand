@@ -1,6 +1,6 @@
 # no,*YOU* talk to the hand!
 
-Access all your corporate stuff and web stuff at the same time without thinking
+Access all your corporate stuff and web stuff at the same time without fuss
 
 **You want this if you're being worn out by:**
 - Seeing the 'talk to the hand' page from the corporate web proxy/filter
@@ -12,7 +12,7 @@ Access all your corporate stuff and web stuff at the same time without thinking
 
 no-YOU-talk-to-the-hand really has **solved all these issues** for me, by providing a straight-forward combination of [sshuttle](https://github.com/sshuttle/sshuttle) for the heavy network lifting, supervisord to keep everything up and manageable, and yaml to keep it simple and organized
 
-Works with Linux and MacOS but **not MS Windows** due to sshuttle
+Works with Linux and MacOS but **not MS Windows** due to sshuttle though there is a workaround for windows described [here](http://sshuttle.readthedocs.io/en/stable/windows.html)
 
 
 ## What it does
@@ -22,7 +22,7 @@ Works with Linux and MacOS but **not MS Windows** due to sshuttle
 - *Keeps your tunnels up* when they should be up
 - *Organizes your tunnels* with a single, simple, YAML configuration 
 - *Enters passwords for you* as needed ([sshpass](https://gist.github.com/arunoda/7790979) required for now)
-- Supports *multiple root VPNs*. Have different vpns that require separate tunnels? Define them in one place and only tunnels dependent on the vpn that is up are established 
+- Supports *multiple VPNs (roots)*. Have different vpns that require separate tunnels? Define them in one place and only tunnels dependent on the vpn that is up are established 
 - Supports any number of *simultaneous tunnels* (thanks to [sshuttle](https://github.com/sshuttle/sshuttle) )
 - Supportes *nested dependencies*. For example: (qa_db, prod_db) -- depends --> (corp_private) -- depends --> (corp_vpn)
 
@@ -83,6 +83,14 @@ depends: corp_restricted
           - *HOST_CORP_SECURE_DB
 ```
 
+
+## Installation
+
+```pip install no_you_talk_to_the_hand```
+
+
+*Note* If you configure a password for any remote server then [sshpass](https://gist.github.com/arunoda/7790979) is required
+
 ## Running
 
 Below are some sample commands.
@@ -93,14 +101,14 @@ Below are some sample commands.
 #### Start - Start the supervisord process and begin managing the configured tunnels
 
 ```
-$ python no_you_talk_to_the_hand.py start
+$ nyttth start
 ```
 
 
 #### Stop - Stop supervisord process and all tunnels with it
 
 ```
-$ python no_you_talk_to_the_hand.py stop
+$ nyttth stop
 ```
 
 
@@ -109,7 +117,7 @@ $ python no_you_talk_to_the_hand.py stop
 when VPN is down:
 
 ``` 
-$ python no_YOU_talk_to_the_hand.py status
+$ nyttth status
 
 Process   Depends   State     Check     
 ----------------------------------------
@@ -124,7 +132,7 @@ qadb      vpn       STOPPED   skipped
 when VPN is up:
 
 ```
-$ python no_YOU_talk_to_the_hand.py status
+$ nyttth status
 
 Process   Depends   State     Check     
 ----------------------------------------
@@ -141,7 +149,7 @@ qadb      vpn       RUNNING   up
 when VPN Disconnects:
 
 ```
-$ python no_YOU_talk_to_the_hand.py tail
+$ nyttth tail
 2017-05-17 11:51:44,701 DEBUG nyttth: checking tunnels
 2017-05-17 11:51:55,000 DEBUG nyttth: checking tunnels
 2017-05-17 11:52:05,265 DEBUG nyttth: checking tunnels
@@ -175,20 +183,10 @@ when VPN Connects:
 ```
 
 
-## Install
-
-For now:
-
-- git clone https://github.com/flashashen/no-YOU-talk-to-the-hand.git
-- cd no-YOU-talk-to-the-hand
-- pip install -r requirements.txt
-
-*Note* If you configure a password for any remote server then [sshpass](https://gist.github.com/arunoda/7790979) is required
-
 ## Notes
 
 This docs ignores whatever technical differences there are between tunnels and forwards and just uses the word 'tunnels'. 
 
 Remote ssh servers through which trafffic is forwarded, are referred to as proxies. 
 
-VP, but technically this is just a 'root' tunnel in the configuration that specifies no proxy setup or forwards
+The term 'VPN' refers to a 'root' tunnel in the configuration that specifies no proxy setup or forwards. It exsits to check an external condition (reachable network endpoint)and does not really have to be a true VPN

@@ -30,57 +30,100 @@ Works with Linux and MacOS but **not MS Windows** due to sshuttle though there i
 ### Yaml replaces all your tunnel scripts/aliases, ssh setup inside db tools, application specific web proxy setup, etc.
 
 ```yaml
-    
-# Watch for connection to corporate VPN. This is the 'root', external tunnel
-vpn:
-    check:
-        host: *HOST_CORP_JUMP
-        port: 22
 
-# Bypass corporate network for web browsing, skype, streaming music, etc. 
-# Anything at a public ip.
-personal:
-depends: vpn
-proxy:
-  host: *HOST_PERSONAL_PROXY
-  port: 22
-forwards:
-    # includes and excludes. items can be ips, subnets, or lists of ip/subnets.
-    include:
-    - 0/0
-    exclude:
-    - *ALL_PRIVATE_ADDRESSES
-    
-# Forward traffic destined for restricted subnets through a corporate jump server.
-corp_restricted:
-    depends: vpn
-    proxy:
-        host: *HOST_CORP_JUMP
-        user: *CORP_USER
-        pass: *CORP_PASS
-    # verify by checking ssh access to the privileged app server
-    check:
-        host: *HOST_CORP_PRIVILEGED_APP
-        port: 22
-    forwards:
-        # includes and excludes. items can be ips, subnets, or lists of ip/subnets.
-        include:
-          - *SUBNETS_CORP_RESTRICTED
-        exclude:
-          - *HOST_CORP_SEURE_DB
+HOST_PERSONAL_PROXY: &HOST_PERSONAL_PROXY 192.168.1.X
+PROXY_USER: &PROXY_USER proxy.username
 
-# Tunnel to access a secure db server from a privliged app server. This tunnel depends 
-# on corp_restricted being established
-prod_db:
-depends: corp_restricted
-    proxy:
-        host: *HOST_CORP_PRIVILEGED_APP
-        user: *CORP_USER
-        pass: *CORP_PASS
-    forwards:
-        # includes and excludes. items can be ips, subnets, or lists of ip/subnets.
-        include:
-          - *HOST_CORP_SECURE_DB
+CORP_USER: &CORP_USER company.username
+CORP_PASS: &CORP_PASS pA$$wuuuurd
+  
+# Define the corporate subnets. SUBNETS_CORP_ALL encompasses addresses that will already be sent
+# through your default network interace to the compnay network. This var is defined for exclusion 
+# from other tunnels which will override your system defaults. SUBNETS_CORP_RESTRICTED is used
+# to forward a subset of corporate traffic through a jump server in order to reach hosts that are 
+# not reachable directly on the VPN. 
+SUBNETS_CORP_ALL: &SUBNETS_CORP_ALL
+    - "10.0.0.0/8"
+SUBNETS_CORP_RESTRICTED: &SUBNETS_CORP_RESTRICTED 
+    - "10.0.1.0/24"
+    - "10.0.2.0/24"
+    
+# Define several special destinations on the corporate network. HOST_CORP_JUMP defines the host 
+# through which all protected subnets must be accessed. HOST_CORP_PRIVILEGED_APP and HOST_CORP_SEURE_DB
+# define an application server and database where the database can only be reached from the
+# application server. Reaching the database will require a nested tunnel
+HOST_CORP_JUMP: &HOST_CORP_JUMP 10.0.0.1
+HOST_CORP_PRIVILEGED_APP: &HOST_CORP_PRIVILEGED_APP 10.0.1.1
+HOST_CORP_SECURE_DB: &HOST_CORP_SECURE_DB 10.0.2.1
+  
+  
+tunnels:
+  
+    # Watch for connection to corporate VPN. This is the 'root', external tunnel
+    # In this configuraiton, if the corporate jump server is available, then the vpn is up
+    vpn:
+        check:
+            host: *HOST_CORP_JUMP
+            port: 22
+    
+      
+    # Bypass corporate network policies for web browsing, skype, streaming music, etc. 
+    # You must have a proxy server available that is outside the corporate network. If 
+    # you don't have one, this project is still useful for accessing restricted 
+    # resources within the corporate network.
+    personal:
+        depends: vpn
+        proxy:
+            host: *HOST_PERSONAL_PROXY
+            user: *PROXY_USER
+            pass:
+        check:
+            # instead of an ip and port, a check target can be a url for an http check
+            url: https://twitter.com/
+
+        forwards:
+            # includes and excludes. items can be ips, subnets, or lists of ip/subnets.
+            include:
+                # By default, forward everything through the personal proxy
+                - 0/0
+            exclude:
+                # exclude home network and anything corporate 
+                - 192.168.0.0/16
+                - *SUBNETS_CORP_ALL
+                   
+    # Forward traffic destined for restricted subnets through a corporate jump server.
+    corp_sec:
+        depends: vpn
+        proxy:
+            host: *HOST_CORP_JUMP
+            user: *CORP_USER
+            pass: *CORP_PASS
+        # verify by checking ssh access to the privileged app server
+        check:
+            # If the application server is reachable, this tunnel is up
+            host: *HOST_CORP_PRIVILEGED_APP
+            port: 22
+        forwards:
+            # Include anything destined for a secured corporate subnet
+            include:
+              - *SUBNETS_CORP_RESTRICTED
+   
+    # Tunnel to access a secure db server from a privileged app server. This tunnel depends 
+    # on corp_restricted being established. For traffic destined for the DB, this rule will 
+    # fire first and the traffic will be forwarded through the APP server, however traffic 
+    # destined for the APP server is forwarded through the JUMP server. 
+    prod_db:
+        depends: corp_sec
+        proxy:
+            host: *HOST_CORP_PRIVILEGED_APP
+            user: *CORP_USER
+            pass: *CORP_PASS
+        forwards:
+            # includes and excludes. items can be ips, subnets, or lists of ip/subnets.
+            include:
+              - *HOST_CORP_SECURE_DB
+                                
+  
 ```
 
 

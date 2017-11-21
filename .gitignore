@@ -130,7 +130,7 @@ local.properties
 Session.vim
 .netrwhist
 *~
-
+ipy
 
 # Virtualization
 .vagrant
@@ -143,3 +143,6 @@ dist
 supervisord.conf
 config.yml
 
+/nyttth.iml
+/.vscode/
+.tox

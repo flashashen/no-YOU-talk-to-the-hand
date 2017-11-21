@@ -1,4 +1,4 @@
-# no,*YOU* talk to the hand!
+# no, *YOU* talk to the hand!
 
 Access all your corporate stuff and web stuff at the same time without fuss
 

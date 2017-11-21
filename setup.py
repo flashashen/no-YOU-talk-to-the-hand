@@ -2,17 +2,19 @@
 
 from setuptools import setup
 import os
+import pypandoc
 
-readme = open('README.md', 'r')
-README_TEXT = readme.read()
-readme.close()
+
+# readme = open('README_GENERATED.rst', 'r')
+README_TEXT = pypandoc.convert_file('README.md', 'rst')
+# readme.close()
 
 setup(
     name='no_you_talk_to_the_hand',
-    version='1.0.1',
+    version='1.0.3',
     author='flashashen',
     author_email='flashashen@gmail.com',
-    description='Boss your corporate network effortlessly. Automatic and organized tunneling with sshuttle + supervisord + yaml',
+    description='nyttth: Boss your corporate network effortlessly. Automatic and organized tunneling with sshuttle + supervisord + yaml',
     license = "MIT",
     url="https://github.com/flashashen/no-YOU-talk-to-the-hand",
     classifiers= [
@@ -27,14 +29,18 @@ setup(
 
     ],
     platforms='osx,linux',
-    keywords = "ssh vpn tunnel forward daemonn",
+    keywords = "ssh vpn tunnel forward daemon",
     long_description=README_TEXT,
     py_modules=['no_you_talk_to_the_hand'],
     install_requires=[
         'Click',
         'supervisor',
         'pyyaml',
-        'jinja2'
+        'jinja2',
+        'six',
+        'requests',
+        'futures',
+        'sshuttle==0.78.1'  # latest version doesn't work for some reason
     ],
 
     entry_points='''

@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-import sys, os, requests, socket, time, subprocess, six
+import sys, os, requests, socket, time, subprocess, six, traceback
 from concurrent import futures
 
 import yaml
@@ -196,27 +196,30 @@ def get_check_type(tun_chk_cfg):
 def check_tunnel(tunnel_name):
 
     chk = get_check_cfg(tunnel_name)
-    type = get_check_type(chk)
+    ctype = get_check_type(chk)
 
-    timeout = 2
+    timeout = 5
 
     # log.trace('{} check config: {} .. '.format(tunnel_name, chk))
     result = None
     try:
-        if type == 'supervisor':
+        if ctype == 'supervisor':
             result = 'up' if proc_started(get_supervisor().getProcessInfo(tunnel_name)) else 'down'
-        elif type == 'url':
+        elif ctype == 'url':
             rsp = requests.head(chk['url'], timeout=timeout)
+            log.debug('{} check ok: {} {}'.format(tunnel_name, chk, rsp))
             result = 'up' if rsp.status_code >= 200 and rsp.status_code < 300 else 'down'
-        elif type == 'socket':
+        elif ctype == 'socket':
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.settimeout(timeout)
             s.connect((chk['host'],int(chk['port'])))
+            log.debug('{} check ok: {}'.format(tunnel_name, chk))
             result = 'up'
             s.close()
         else:
-            result =  'invalid'
+            result = 'invalid'
     except Exception as e:
+        log.debug('{} check failed: {} {}'.format(tunnel_name, chk, e))
         result = 'down'
 
     # log.trace('{}: {}'.format(tunnel_name, result))
@@ -287,7 +290,7 @@ def check_dependent_tunnels(check_result_parent = None, check_only=False):
 
 
     # Recurse though child tunnels. If this tunnel is down then just stop everything depedning on it
-    for check_result in list(statuses):
+    for check_result in statuses:
         if check_result.status != 'down' or check_only:
             statuses.extend(check_dependent_tunnels(check_result, check_only))
         else:
@@ -313,15 +316,19 @@ def proc_upseconds(proc):
 def vpnmonitor():
 
     while True:
-        #
-        #
-        # headers, payload = childutils.listener.wait()
-        log.debug('checking tunnels')
-        results = check_dependent_tunnels()
-        # for result in results:
-        #     log.debug('{} check: {}'.format(result.name, result.status))
-        time.sleep(6)
-        # childutils.listener.ok()
+
+        try:
+            #
+            #
+            # headers, payload = childutils.listener.wait()
+            log.debug('checking tunnels')
+            results = check_dependent_tunnels()
+            # for result in results:
+            #     log.debug('{} check: {}'.format(result.name, result.status))
+            time.sleep(6)
+            # childutils.listener.ok()
+        except Exception as e:
+            print e
 
 
 
@@ -458,11 +465,19 @@ def generate_supervisor_conf(ctx):
 def write_supervisor_conf():
     with open(cfg['supervisor.conf'], 'w') as f:
         f.write(jinja2.Template(SUPERVISOR_TEMPLATE).render(get_tmpl_ctx()))
+        f.flush()
 
 
 def get_supervisor():
     return childutils.getRPCInterface({'SUPERVISOR_SERVER_URL':'unix:///tmp/vpnsupervisor.sock'}).supervisor
 
+
+def supervisor_is_running():
+    import stat
+    try:
+        return stat.S_ISSOCK(os.stat('/tmp/vpnsupervisor.sock').st_mode)
+    except:
+        return False
 
 @click.group()
 def cli():
@@ -482,12 +497,11 @@ def cli():
 
 
 
-@cli.command('refreshconfig')
-def write_config():
-    write_supervisor_conf()
-    get_supervisor().reloadConfig()
-
-
+#
+# @cli.command('refreshconfig')
+# def write_config():
+#     write_supervisor_conf()
+#     get_supervisor().reloadConfig()
 
 
 def write_stdout(s):
@@ -498,6 +512,10 @@ def write_stdout(s):
 @cli.command('tail')
 @click.option('--tunnel', '-t', default='vpnmon', help='specify a specific tunnel to tail. If not specified the vpn monitor will be tailed')
 def tail(tunnel):
+
+    if not supervisor_is_running():
+        print 'Supervisor does not appear to be running'
+        return
 
     numbytes = 100
     result = get_supervisor().tailProcessStdoutLog(tunnel, 0, numbytes)
@@ -522,36 +540,94 @@ def tail(tunnel):
 
 
 
+
+@cli.command('list')
+def list():
+    for name, config in get_config()['tunnels'].items():
+        print name
+        # print {'name':name,
+        #     'proxy': config['proxy']['host'] if 'proxy' in config and 'host' in config['proxy'] else '',
+        #     'check': config['check'] if 'check' in config else '',
+        #     'depends':config['depends'] if 'depends' in config else ''}
+
+
+# @cli.command()
+# @click.argument('tunnel')
+# def up(tunnel):
+#     try:
+#         if not supervisor_is_running():
+#             start()
+#
+#         get_supervisor().startProcess(tunnel)
+#     except:
+#         traceback.print_exc()
+
+
+# @cli.command('down')
+# @click.argument('tunnel')
+# def down(tunnel):
+#     if not supervisor_is_running():
+#         print('supervisor is not running')
+#
+#     get_config(None)
+#     write_supervisor_conf()
+#
+#     get_supervisor().stopProcess(tunnel)
+#     # continue stopping recursively
+#     stop_dependent_tunnels(tunnel)
+#
+#     # get_supervisor().stopProcess(tunnel)
+
+
 @cli.command('status')
 def status():
 
-    check_statuses = { check_result.name:check_result.status for check_result in check_dependent_tunnels(None, True) }
-    sup_states = { proc['name']:proc for proc in get_supervisor().getAllProcessInfo() }
+    if not supervisor_is_running():
+        print 'Supervisor does not appear to be running'
+        return
+
+    try:
+        check_statuses = { check_result.name:check_result.status for check_result in check_dependent_tunnels(None, True) }
+        sup_states = { proc['name']:proc for proc in get_supervisor().getAllProcessInfo() }
+    except Exception as e:
+        if 'No such file' in str(e):
+            print 'Supervisor does not appear to be running'
+            return
+        else:
+            raise e
 
     out = [ {'name':name,
             'state':sup_states[name]['statename'] if name in sup_states else 'N/A',
             'checkup': check_statuses[name],
             'depends':config['depends'] if 'depends' in config else ''}
-        for name, config in get_config()['tunnels'].iteritems() ]
+        for name, config in get_config()['tunnels'].iteritems()]
 
 
     out.sort()
     longest = len(max(get_config()['tunnels'], key=lambda t: len(t)))
-    header = 'Process'.ljust(longest + 4) + 'Depends'.ljust(10) + 'State'.ljust(10) + 'Check'.ljust(10)
+    header = 'Process'.ljust(longest + 4) + 'Depends'.ljust(longest + 4) + 'State'.ljust(10) + 'Check'.ljust(10)
 
     print('')
     print(header)
     print ''.ljust(len(header),'-')
-    for info in sorted(out,key=lambda x: x['depends']):
+    for info in sorted(out, key=lambda x: x['depends']):
         print info['name'].ljust(longest + 4) + info['depends'].ljust(10) + info['state'].ljust(10) + info['checkup'].ljust(10)
     print('')
+
+
+@cli.command('ctl', help='run supervisorctl console')
+def ctl():
+    import subprocess
+    try:
+        subprocess.call('supervisorctl -c ~/.nyttth/supervisord.conf', shell=True)
+    except:
+        pass
 
 
 @cli.command('stop')
 def stop():
     """
     Shutdown the supervisor
-    :return:
     """
     try:
         childutils.getRPCInterface({'SUPERVISOR_SERVER_URL':'unix:///tmp/vpnsupervisor.sock'}).supervisor.shutdown()
@@ -591,7 +667,7 @@ def start(config):
 
         return 1
 
-    print("Supervisor is running.")
+    print("Supervisor is running")
 
 
 if __name__ == '__main__':

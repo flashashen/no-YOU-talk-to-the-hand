@@ -141,7 +141,7 @@ dist
 **.ipynb_checkpoints
 **.egg*
 supervisord.conf
-config.yml
+#config.yml
 
 /nyttth.iml
 /.vscode/

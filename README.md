@@ -1,6 +1,14 @@
 # no, *YOU* talk to the hand!
 
+![CircleCI](https://circleci.com/gh/flashashen/no-YOU-talk-to-the-hand.svg?style=svg)
+[![PyPI version](https://badge.fury.io/py/no-you-talk-to-the-hand.svg)](https://badge.fury.io/py/no-you-talk-to-the-hand)
+![Python versions](https://img.shields.io/pypi/pyversions/no-YOU-talk-to-the-hand.svg)
+![MIT License](https://img.shields.io/github/license/flashashen/no-YOU-talk-to-the-hand.svg)
+
+--------------------------------------
+
 Access all your corporate stuff and web stuff at the same time without fuss
+
 
 **You want this if you're being worn out by:**
 - Seeing the 'talk to the hand' page from the corporate web proxy/filter

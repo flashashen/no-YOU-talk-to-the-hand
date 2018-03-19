@@ -1,5 +1,6 @@
 
-import os, tempfile, yaml, ConfigParser, no_you_talk_to_the_hand as ny
+import os, tempfile, yaml, ConfigParser
+from .. import no_you_talk_to_the_hand as ny
 
 
 testcfg = {

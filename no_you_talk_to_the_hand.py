@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-import sys, os, requests, socket, time, subprocess, six, traceback
+import sys, os, requests, socket, time, subprocess, six
 from concurrent import futures
 
 import yaml
@@ -184,13 +184,38 @@ CheckResult = namedtuple('CheckResult', 'name status type')
 
 
 
+
 def get_check_type(tun_chk_cfg):
+
+    dbnames = ['postgresql', 'mysql', 'oracle', 'mssql', 'odbc']
+
     if not tun_chk_cfg:
         return 'supervisor'
     elif 'url' in tun_chk_cfg and tun_chk_cfg['url']:
-        return 'url'
+        protocol = tun_chk_cfg['url'].split('://')[0]
+        if 'http' in protocol:
+            return 'url'
+        elif [x for x in dbnames if x in protocol]:
+            return 'db'
+        else:
+            # unrecognized protocol. give requests a shot at it
+            return 'url'
+
     else:
         return 'socket'
+
+
+
+def dbengine_create_func(config):
+
+    import sqlalchemy
+    params = config.copy()
+    if not 'poolclass' in params:
+        params['poolclass'] = sqlalchemy.pool.NullPool
+    if not 'connect_timeout' in params:
+        params['connect_timeout'] = 10
+    url = params.pop('url')
+    return sqlalchemy.create_engine(url, **params)
 
 
 def check_tunnel(tunnel_name):
@@ -206,9 +231,19 @@ def check_tunnel(tunnel_name):
         if ctype == 'supervisor':
             result = 'up' if proc_started(get_supervisor().getProcessInfo(tunnel_name)) else 'down'
         elif ctype == 'url':
-            rsp = requests.head(chk['url'], timeout=timeout)
+            rsp = requests.head(chk['url'], verify=False, timeout=timeout)
             log.debug('{} check ok: {} {}'.format(tunnel_name, chk, rsp))
             result = 'up' if rsp.status_code >= 200 and rsp.status_code < 300 else 'down'
+        elif ctype == 'db':
+            import sqlalchemy
+            eng = get_run_data(tunnel_name)['db_engine'];
+            if not eng:
+                eng = dbengine_create_func(chk)
+                get_run_data(tunnel_name)['db_engine'] = eng
+            conn = eng.connect()
+            conn.close()
+            log.debug('{} check ok: {}'.format(tunnel_name, chk))
+            result = 'up'
         elif ctype == 'socket':
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.settimeout(timeout)
@@ -423,7 +458,7 @@ def get_excludes(tunnel_name):
     return []
 
 
-def get_tunnel_dependents(tunnel_name = None):
+def get_tunnel_dependents(tunnel_name=None):
 
     tunnels = get_config()['tunnels']
     if not tunnel_name:
@@ -431,6 +466,14 @@ def get_tunnel_dependents(tunnel_name = None):
     else:
         return [ x for x in tunnels if 'depends' in tunnels[x] and tunnels[x]['depends'] == tunnel_name ]
 
+
+def get_run_data(tunnel_name):
+    data = get_config()['tunnels'][tunnel_name]['__run_data'];
+    if not data:
+        data = {}
+        get_config()['tunnels'][tunnel_name]['__run_data'] = data
+
+    return data
 
 
 

@@ -1,0 +1,39 @@
+#
+#
+#     Sample configuration for 'no YOU talk to the hand' (nyttth)
+#
+#
+
+
+
+#
+#     Define variables
+#
+
+
+SUBNETS_CORP_RESTRICTED: &SUBNETS_CORP_RESTRICTED
+    # Forward all private addresses as an example
+    - 172.16.0.0/12
+    - 10.0.0.0/8
+
+
+# Once we can access the internal subnet though the initial jump server, we need
+# another forward to access a secure db instance via a privileged app server
+HOST_CORP_PRIVILEGED_APP: &HOST_CORP_PRIVILEGED_APP 10.1.2.1
+HOST_CORP_SECURE_DB: &HOST_CORP_SECURE_DB 10.1.3.0/24
+
+#
+#   Setup the forwarding rules (tunnels/proxies)
+#
+tunnels:
+
+
+  # If vpn is up, the forward traffic to restricted corporate subnets through the jump server.
+  corporate:
+    depends: vpn
+    forwards:
+      # includes and excludes. items can be ips, subnets, or lists of ip/subnets.
+      include:
+        - *SUBNETS_CORP_RESTRICTED
+      exclude:
+        - *HOST_CORP_SECURE_DB

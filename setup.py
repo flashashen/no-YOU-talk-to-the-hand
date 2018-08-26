@@ -1,13 +1,17 @@
 # https://packaging.python.org/tutorials/distributing-packages/
 
 from setuptools import setup
-import os
-import pypandoc
+# import pypandoc
 
 
 # readme = open('README_GENERATED.rst', 'r')
-README_TEXT = pypandoc.convert_file('README.md', 'rst')
+# README_TEXT = pypandoc.convert_file('README.md', 'rst')
 # readme.close()
+
+import os
+readme = open('README.md', 'r')
+README_TEXT = readme.read()
+readme.close()
 
 setup(
     name='no_you_talk_to_the_hand',
@@ -40,7 +44,7 @@ setup(
         'six',
         'requests',
         'futures',
-        'sshuttle==0.78.1'  # latest version doesn't work for some reason
+        'sshuttle==0.78.4' 
     ],
 
     entry_points='''

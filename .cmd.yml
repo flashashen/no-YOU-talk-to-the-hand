@@ -1,5 +1,6 @@
 
 dsh: 2
+ns: flash.nyttth
 
 vars:
   app_name: no_you_talk_to_the_hand

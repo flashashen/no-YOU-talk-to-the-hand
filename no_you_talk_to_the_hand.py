@@ -8,6 +8,8 @@ from supervisor import childutils
 import click
 import jinja2
 
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 import logging
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
@@ -191,6 +193,8 @@ def get_check_type(tun_chk_cfg):
 
     if not tun_chk_cfg:
         return 'supervisor'
+    elif 'driver' in tun_chk_cfg:
+        return 'db'
     elif 'url' in tun_chk_cfg and tun_chk_cfg['url']:
         protocol = tun_chk_cfg['url'].split('://')[0]
         if 'http' in protocol:
@@ -210,11 +214,15 @@ def dbengine_create_func(config):
 
     import sqlalchemy
     params = config.copy()
-    if not 'poolclass' in params:
+    if 'poolclass' not in params:
         params['poolclass'] = sqlalchemy.pool.NullPool
-    if not 'connect_timeout' in params:
-        params['connect_timeout'] = 10
-    url = params.pop('url')
+    url = "{:s}://{:s}:{:s}@{:s}:{:s}/{:s}?".format(
+        params.pop('driver'),
+        params.pop('user'),
+        params.pop('pass'),
+        params.pop('host'),
+        params.pop('port'),
+        params.pop('db'))
     return sqlalchemy.create_engine(url, **params)
 
 
@@ -232,18 +240,23 @@ def check_tunnel(tunnel_name):
             result = 'up' if proc_started(get_supervisor().getProcessInfo(tunnel_name)) else 'down'
         elif ctype == 'url':
             rsp = requests.head(chk['url'], verify=False, timeout=timeout)
-            log.debug('{} check ok: {} {}'.format(tunnel_name, chk, rsp))
+            ok = rsp.status_code >= 200 and rsp.status_code < 300
+            log.debug('{} check {}: {} {}'.format(
+                tunnel_name,
+                'ok' if ok else "failed",
+                chk,
+                rsp))
             result = 'up' if rsp.status_code >= 200 and rsp.status_code < 300 else 'down'
         elif ctype == 'db':
             import sqlalchemy
-            eng = get_run_data(tunnel_name)['db_engine'];
+            eng = get_run_data(tunnel_name).get('db_engine');
             if not eng:
                 eng = dbengine_create_func(chk)
                 get_run_data(tunnel_name)['db_engine'] = eng
             conn = eng.connect()
             conn.close()
             log.debug('{} check ok: {}'.format(tunnel_name, chk))
-            result = 'up'
+            result =     'up'
         elif ctype == 'socket':
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.settimeout(timeout)
@@ -254,6 +267,7 @@ def check_tunnel(tunnel_name):
         else:
             result = 'invalid'
     except Exception as e:
+        log.error(str(e))
         log.debug('{} check failed: {} {}'.format(tunnel_name, chk, e))
         result = 'down'
 
@@ -296,21 +310,22 @@ def stop_dependent_tunnels(tunnel_name):
             stop_dependent_tunnels(tunnel)
 
 
-def check_dependent_tunnels(check_result_parent = None, check_only=False):
+def check_dependent_tunnels(check_result_parent=None, check_only=False):
 
     tunnels = get_tunnel_dependents(
         check_result_parent.name if check_result_parent else None);
 
     if not tunnels:
-        # log.debug('no dependents\n')
+        # log.debug('check_dependent_tunnels: no dependents\n')
         return {}
 
+    log.debug('check_dependent_tunnels: ' + ','.join(tunnels))
 
     statuses = []
-    if check_result_parent and not check_result_parent.status == 'up':
+    if check_result_parent and check_result_parent.status != 'up':
         # If parent is not up, then skip children
-        statuses = [CheckResult(tunnel_name,'skipped',get_check_type(get_check_cfg(tunnel_name)))
-            for tunnel_name in tunnels ]
+        statuses = [CheckResult(tunnel_name, 'skipped', get_check_type(get_check_cfg(tunnel_name)))
+                    for tunnel_name in tunnels]
     else:
         # Use a thread pool to perform the checks of child tunnels
         with futures.ThreadPoolExecutor(max_workers=10) as executor:
@@ -329,6 +344,7 @@ def check_dependent_tunnels(check_result_parent = None, check_only=False):
         if check_result.status != 'down' or check_only:
             statuses.extend(check_dependent_tunnels(check_result, check_only))
         else:
+            pass
             # Make sure dependent tunnels are stopped. Don't bother gathering status as we may no longer use it
             stop_dependent_tunnels(check_result.name)
 
@@ -360,7 +376,7 @@ def vpnmonitor():
             results = check_dependent_tunnels()
             # for result in results:
             #     log.debug('{} check: {}'.format(result.name, result.status))
-            time.sleep(6)
+            time.sleep(20)
             # childutils.listener.ok()
         except Exception as e:
             print e
@@ -468,7 +484,7 @@ def get_tunnel_dependents(tunnel_name=None):
 
 
 def get_run_data(tunnel_name):
-    data = get_config()['tunnels'][tunnel_name]['__run_data'];
+    data = get_config()['tunnels'][tunnel_name].get('__run_data');
     if not data:
         data = {}
         get_config()['tunnels'][tunnel_name]['__run_data'] = data

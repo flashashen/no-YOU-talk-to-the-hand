@@ -1,7 +1,6 @@
 # no, *YOU* talk to the hand!
 
 ![CircleCI](https://circleci.com/gh/flashashen/no-YOU-talk-to-the-hand.svg?style=svg)
-[![PyPI version](https://badge.fury.io/py/no-you-talk-to-the-hand.svg)](https://badge.fury.io/py/no-you-talk-to-the-hand)
 ![Python versions](https://img.shields.io/pypi/pyversions/no-YOU-talk-to-the-hand.svg)
 ![MIT License](https://img.shields.io/github/license/flashashen/no-YOU-talk-to-the-hand.svg)
 
@@ -11,6 +10,7 @@ Access all your corporate stuff and web stuff at the same time without fuss
 
 
 **You want this if you're being worn out by:**
+
 - Seeing the 'talk to the hand' page from the corporate web proxy/filter
 - Re-entering ssh credentials over and over (key based auth isn't allowed everywhere)
 - Tunnel/proxy setup in too many places and in too many ways
@@ -18,7 +18,7 @@ Access all your corporate stuff and web stuff at the same time without fuss
 - Tunnels dropping silently
 - Forgetting to manually bring up tunnels after logging onto vpn
 
-no-YOU-talk-to-the-hand really has **solved all these issues** for me, by providing a straight-forward combination of [sshuttle](https://github.com/sshuttle/sshuttle) for the heavy network lifting, supervisord to keep everything up and manageable, and yaml to keep it simple and organized
+no-YOU-talk-to-the-hand solves all these issues** by providing a straight-forward combination of [sshuttle](https://github.com/sshuttle/sshuttle) for the heavy network lifting, supervisord to keep everything up and manageable, and yaml to keep it simple and organized
 
 Works with Linux and MacOS but **not MS Windows** due to sshuttle though there is a workaround for windows described [here](http://sshuttle.readthedocs.io/en/stable/windows.html)
 
@@ -35,7 +35,7 @@ Works with Linux and MacOS but **not MS Windows** due to sshuttle though there i
 - Supportes *nested dependencies*. For example: (qa_db, prod_db) -- depends --> (corp_private) -- depends --> (corp_vpn)
 
 
-### Yaml replaces all your tunnel scripts/aliases, ssh setup inside db tools, application specific web proxy setup, etc.
+### Config.yml replaces all your tunnel scripts/aliases, ssh setup inside db tools, application specific web proxy setup, etc:
 
 ```yaml
 
@@ -126,6 +126,13 @@ tunnels:
             host: *HOST_CORP_PRIVILEGED_APP
             user: *CORP_USER
             pass: *CORP_PASS
+        check:
+            driver: mysql+pymysql
+            db:   testdb
+            user: testuser
+            pass: testpass
+            host: 10.0.2.1
+            port: '3306'
         forwards:
             # includes and excludes. items can be ips, subnets, or lists of ip/subnets.
             include:
@@ -140,7 +147,13 @@ tunnels:
 ```pip install no_you_talk_to_the_hand```
 
 
-*Note* If you configure a password for any remote server then [sshpass](https://gist.github.com/arunoda/7790979) is required
+If you're getting install errors like 'TLSV1_ALERT_PROTOCOL_VERSION' you may first need to upgrade pip 
+
+```curl https://bootstrap.pypa.io/get-pip.py | python```
+
+If you configure a password for any remote server then [sshpass](https://gist.github.com/arunoda/7790979) is required
+
+If you check a tunnel via a sqlalchemy connection (see prod_db tunnel in sample config above) then sqlalchemy and the appropriate driver must be installed separately
 
 ## Running
 
@@ -149,21 +162,21 @@ Below are some sample commands.
 **Note:** Before running a configuration file called config.yml must be created in the project directory. Look at sample_config.yml as a start.
 
 
-#### Start - Start the supervisord process and begin managing the configured tunnels
+### Start - Start the supervisord process and begin managing the configured tunnels
 
 ```
 $ nyttth start
 ```
 
 
-#### Stop - Stop supervisord process and all tunnels with it
+### Stop - Stop supervisord process and all tunnels with it
 
 ```
 $ nyttth stop
 ```
 
 
-#### Status - View status of all defined tunnels
+### Status - View status of all defined tunnels
  
 when VPN is down:
 
@@ -195,7 +208,7 @@ itun      vpn       RUNNING   up
 qadb      vpn       RUNNING   up        
 ```
 
-#### Tail - Tail the tunnel monitor that checks tunnel statuses and brings them up or down as needed.
+### Tail - Tail the tunnel monitor that checks tunnel statuses and brings them up or down as needed.
 
 when VPN Disconnects:
 

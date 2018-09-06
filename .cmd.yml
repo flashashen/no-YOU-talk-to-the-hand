@@ -18,7 +18,9 @@ install:
 package:
   - rm -rf build
   - rm -rf dist
+  - pandoc -o README.rst README.md
   - python setup.py sdist bdist_wheel
+  - rm README.rst
 
 publish:
   - twine upload -r pypi -u flashashen dist/{{app_name}}* 

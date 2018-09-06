@@ -1,21 +1,17 @@
 # https://packaging.python.org/tutorials/distributing-packages/
 
 from setuptools import setup
-# import pypandoc
 
-
-# readme = open('README_GENERATED.rst', 'r')
-# README_TEXT = pypandoc.convert_file('README.md', 'rst')
-# readme.close()
-
-import os
-readme = open('README.md', 'r')
-README_TEXT = readme.read()
-readme.close()
+try:
+    readme = open('README.rst', 'r')
+    README_TEXT = readme.read()
+    readme.close()
+except:
+    README_TEXT = ""
 
 setup(
     name='no_you_talk_to_the_hand',
-    version='1.0.3',
+    version='1.0.4',
     author='flashashen',
     author_email='flashashen@gmail.com',
     description='nyttth: Boss your corporate network effortlessly. Automatic and organized tunneling with sshuttle + supervisord + yaml',
@@ -33,7 +29,7 @@ setup(
 
     ],
     platforms='osx,linux',
-    keywords = "ssh vpn tunnel forward daemon",
+    keywords="ssh vpn tunnel forward daemon",
     long_description=README_TEXT,
     py_modules=['no_you_talk_to_the_hand'],
     install_requires=[
@@ -44,7 +40,7 @@ setup(
         'six',
         'requests',
         'futures',
-        'sshuttle==0.78.4' 
+        'sshuttle==0.78.1'
     ],
 
     entry_points='''

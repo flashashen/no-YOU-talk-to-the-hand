@@ -12,13 +12,13 @@ Access all your corporate stuff and web stuff at the same time without fuss
 **You want this if you're being worn out by:**
 
 - Seeing the 'talk to the hand' page from the corporate web proxy/filter
-- Re-entering ssh credentials over and over (key based auth isn't allowed everywhere)
 - Tunnel/proxy setup in too many places and in too many ways
 - Not having application specific tunnels (dbvis, datagrip) available from the console
 - Tunnels dropping silently
 - Forgetting to manually bring up tunnels after logging onto vpn
+- Re-entering ssh credentials over and over (key based auth isn't allowed everywhere)
 
-no-YOU-talk-to-the-hand solves all these issues** by providing a straight-forward combination of [sshuttle](https://github.com/sshuttle/sshuttle) for the heavy network lifting, supervisord to keep everything up and manageable, and yaml to keep it simple and organized
+no-YOU-talk-to-the-hand solves all these issues by providing a straight-forward combination of [sshuttle](https://github.com/sshuttle/sshuttle) for the heavy network lifting, supervisord to keep everything up and manageable, and yaml to keep it simple and organized
 
 Works with Linux and MacOS but **not MS Windows** due to sshuttle though there is a workaround for windows described [here](http://sshuttle.readthedocs.io/en/stable/windows.html)
 

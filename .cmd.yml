@@ -6,7 +6,7 @@ vars:
   app_name: no_you_talk_to_the_hand
 
 init: 
-  - pip install -U pip setuptools wheel twine keyring pypandoc
+  - pip install -U pip setuptools wheel twine keyring pypandoc tox
   - python -c "from pypandoc.pandoc_download import download_pandoc; download_pandoc()"
 
 test:

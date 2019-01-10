@@ -326,6 +326,8 @@ $ nyttth ctl
 
 This project uses sshuttle version 0.78.1. Subsequent versions define PF (Packet Filter) exclusions in a way that breaks when there are exclusions in multiple instances of sshuttle.   
 
+Python 3 is not supported because supervisord does not
+
 This docs ignores whatever technical differences there are between tunnels and forwards and just uses the word 'tunnels'. 
 
 Remote ssh servers through which trafffic is forwarded, are referred to as proxies. 

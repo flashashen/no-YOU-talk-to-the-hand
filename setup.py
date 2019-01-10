@@ -11,7 +11,7 @@ except:
 
 setup(
     name='no_you_talk_to_the_hand',
-    version='1.0.4',
+    version='1.0.5',
     author='flashashen',
     author_email='flashashen@gmail.com',
     description='nyttth: Boss your corporate network effortlessly. Automatic and organized tunneling with sshuttle + supervisord + yaml',
@@ -35,10 +35,10 @@ setup(
     install_requires=[
         'Click',
         'supervisor',
-        'pyyaml',
+        'pyyaml>=4.2b1',
         'jinja2',
         'six',
-        'requests',
+        'requests>=2.20.0',
         'futures',
         'sshuttle==0.78.1'
     ],

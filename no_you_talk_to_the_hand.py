@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-import sys, os, requests, socket, time, subprocess, six
+import sys, os, requests, socket, time, subprocess, six, traceback
 from concurrent import futures
 
 import yaml
@@ -204,7 +204,8 @@ def get_check_type(tun_chk_cfg):
         else:
             # unrecognized protocol. give requests a shot at it
             return 'url'
-
+    elif 'test' in tun_chk_cfg:
+        return 'test'
     else:
         return 'socket'
 
@@ -264,15 +265,45 @@ def check_tunnel(tunnel_name):
             log.debug('{} check ok: {}'.format(tunnel_name, chk))
             result = 'up'
             s.close()
+
+        elif ctype == 'test':
+            if 'result' in chk['test']:
+                result = chk['test']['result']
+            else:
+                result = 'down'
+            if 'sleep' in chk['test']:
+                time.sleep(int(chk['test']['sleep']))
         else:
             result = 'invalid'
     except Exception as e:
-        log.error(str(e))
-        log.debug('{} check failed: {} {}'.format(tunnel_name, chk, e))
+        # log.error(str(e))
+        log.info('{} check failed: {} {}'.format(tunnel_name, chk, e))
         result = 'down'
 
     # log.trace('{}: {}'.format(tunnel_name, result))
+    #set_last_check(tunnel_name, result)
     return CheckResult(tunnel_name, result, type)
+
+
+
+def check_tunnels(tunnel_names, done_callback=None):
+    '''
+    Run tunnel health checks against given list of tunnels
+    :param tunnel_names: list of tunnel names to check
+    :param done_callback:  function to execute when check is complete
+    :return: list of CheckResults
+    '''
+    # Use a thread pool to perform the checks of child tunnels
+    with futures.ThreadPoolExecutor(max_workers=10) as executor:
+        check_futures = []
+        for tunnel_name in tunnel_names:
+            future = executor.submit(check_tunnel, tunnel_name)
+            if done_callback:
+                future.add_done_callback(done_callback)
+            check_futures.append(future)
+
+        return [future.result() for future in futures.as_completed(check_futures)]
+
 
 
 def handle_down_tunnel(check_future):
@@ -301,6 +332,7 @@ def handle_down_tunnel(check_future):
             log.error(str(e))
 
 
+
 def stop_dependent_tunnels(tunnel_name):
     for tunnel in get_tunnel_dependents(tunnel_name):
         if proc_started(get_supervisor().getProcessInfo(tunnel)):
@@ -308,6 +340,7 @@ def stop_dependent_tunnels(tunnel_name):
             get_supervisor().stopProcess(tunnel)
             # continue stopping recursively
             stop_dependent_tunnels(tunnel)
+
 
 
 def check_dependent_tunnels(check_result_parent=None, check_only=False):
@@ -319,36 +352,31 @@ def check_dependent_tunnels(check_result_parent=None, check_only=False):
         # log.debug('check_dependent_tunnels: no dependents\n')
         return {}
 
+    # log.debug('check_dependent_tunnels: for ' + check_result_parent.name if check_result_parent else None)
     log.debug('check_dependent_tunnels: ' + ','.join(tunnels))
 
-    statuses = []
     if check_result_parent and check_result_parent.status != 'up':
         # If parent is not up, then skip children
-        statuses = [CheckResult(tunnel_name, 'skipped', get_check_type(get_check_cfg(tunnel_name)))
+        results = [CheckResult(tunnel_name, 'skipped', get_check_type(get_check_cfg(tunnel_name)))
                     for tunnel_name in tunnels]
     else:
-        # Use a thread pool to perform the checks of child tunnels
-        with futures.ThreadPoolExecutor(max_workers=10) as executor:
-            check_futures = []
-            for tunnel_name in tunnels:
-                future = executor.submit(check_tunnel, tunnel_name)
-                if not check_only:
-                    future.add_done_callback(handle_down_tunnel)
-                check_futures.append(future)
+        results = check_tunnels(
+            tunnels,
+            handle_down_tunnel if not check_only else None
+        )
 
-            statuses = [future.result() for future in futures.as_completed(check_futures)]
-
-
-    # Recurse though child tunnels. If this tunnel is down then just stop everything depedning on it
-    for check_result in statuses:
-        if check_result.status != 'down' or check_only:
-            statuses.extend(check_dependent_tunnels(check_result, check_only))
-        else:
-            pass
+    # Recurse though child tunnels. If this tunnel is down then just stop everything depending on it
+    child_results = []
+    for check_result in results:
+        if check_result.status == 'up':
+            child_results.extend(check_dependent_tunnels(check_result, check_only))
+        elif check_result.status == 'down' and not check_only:
+            # pass
             # Make sure dependent tunnels are stopped. Don't bother gathering status as we may no longer use it
             stop_dependent_tunnels(check_result.name)
 
-    return statuses
+
+    return results + child_results
 
 
 
@@ -376,7 +404,7 @@ def vpnmonitor():
             results = check_dependent_tunnels()
             # for result in results:
             #     log.debug('{} check: {}'.format(result.name, result.status))
-            time.sleep(20)
+            time.sleep(get_monitor_poll_seconds())
             # childutils.listener.ok()
         except Exception as e:
             print e
@@ -445,10 +473,19 @@ def get_config(config='~/.nyttth/config.yml'):
             # print('setting log level to {}'.format(cfg['log_level']))
             log.setLevel(logging.getLevelName(cfg['log_level']))
 
+        try:
+            cfg['monitor_poll_seconds'] = int(cfg['monitor_poll_seconds'])
+        except:
+            cfg['monitor_poll_seconds'] = 20;
+
+
         cfg['basedir'] = os.path.dirname(cfgpath)
         cfg['supervisor.conf'] = os.path.join(cfg['basedir'],'supervisord.conf')
 
     return cfg
+
+def get_monitor_poll_seconds():
+    return get_config()['monitor_poll_seconds']
 
 def get_proxy_cfg(tunnel_name):
     return get_config()['tunnels'][tunnel_name]['proxy'] if 'proxy' in get_config()['tunnels'][tunnel_name] else {}
@@ -458,6 +495,16 @@ def get_check_cfg(tunnel_name):
 
 def get_forwards_cfg(tunnel_name):
     return get_config()['tunnels'][tunnel_name]['forwards']
+
+def get_last_check(tunnel_name):
+    return get_run_data(tunnel_name)['last_check'] if 'last_check' in get_run_data(tunnel_name) else 'NOT CHECKED'
+def set_last_check(tunnel_name, result):
+    try:
+        print 'last check value before set: ', get_run_data(tunnel_name)['last_check'], '. new result: ', result
+    except:
+        pass
+    get_run_data(tunnel_name)['last_check'] = result
+    # print get_config()['tunnels'][tunnel_name]
 
 def get_includes(tunnel_name):
     forwards = get_forwards_cfg(tunnel_name)
@@ -478,8 +525,10 @@ def get_tunnel_dependents(tunnel_name=None):
 
     tunnels = get_config()['tunnels']
     if not tunnel_name:
+        # all tunnels with no dependency defined
         return [ x for x in tunnels if 'depends' not in tunnels[x] or not tunnels[x]['depends'] ]
     else:
+        # all tunnels where specified dependency matches the one given
         return [ x for x in tunnels if 'depends' in tunnels[x] and tunnels[x]['depends'] == tunnel_name ]
 
 
@@ -540,27 +589,11 @@ def supervisor_is_running():
 
 @click.group()
 def cli():
-    """This script controls a supervisord daemon, which in turns controls processes that manage
-       tunnels that should run whenever the vpn is connected
-   """
+    """
+    Command line management for no-YOU-talk-to-the-hand
+    """
     pass
 
-# @cli.command('install')
-# def install():
-#     """
-#     Run this to install dependencies and a script runnable from anywhere. It must be run from src directory
-#
-#     :return:
-#     """
-#     output = subprocess.check_output("pip install --editable .")
-
-
-
-#
-# @cli.command('refreshconfig')
-# def write_config():
-#     write_supervisor_conf()
-#     get_supervisor().reloadConfig()
 
 
 def write_stdout(s):
@@ -568,46 +601,69 @@ def write_stdout(s):
     sys.stdout.flush()
 
 
-@cli.command('tail')
-@click.option('--tunnel', '-t', default='vpnmon', help='specify a specific tunnel to tail. If not specified the vpn monitor will be tailed')
-def tail(tunnel):
 
+
+
+@cli.command('tail')
+@click.option('--tunnel', '-t', type=click.Choice(get_config()['tunnels'].keys()), help='specify a specific tunnel to tail. If not specified all tunnels and the tunnel monitor (monitor) will be tailed')
+@click.option('--wait', '-f', is_flag=True, help='wait for additional data')
+@click.option('--lines', '-n', help='number of lines to display', type=click.INT)
+def tail(tunnel, wait, lines):
+
+    '''
+    Use system tail command to display logs. If a specific tunnel is not specified then all logs will be tailed including the supervisord main log and the vpnmon tunnel monitor process.
+    '''
     if not supervisor_is_running():
         print 'Supervisor does not appear to be running'
         return
 
-    numbytes = 100
-    result = get_supervisor().tailProcessStdoutLog(tunnel, 0, numbytes)
-    offset = result[1]
+    opts = '-f ' if wait else ''
+    if lines:
+        opts += '-n ' + lines
 
-    while True:
-        result = get_supervisor().tailProcessStdoutLog(tunnel, offset, numbytes)
-        # If more data was written to the log or if we've failed to read whats already there
-        if result[1] > offset or result[2] :
-            # if result[2]:
-                # All the data has not been read. Re-read entire buffer. If the entire buffer is not
-                # read then we get the latter part and the data at teh beginning (at the offset) is
-                # skipped
-            result = get_supervisor().tailProcessStdoutLog(tunnel, offset, result[1]-offset)
+    import subprocess
+    try:
 
-            # all the data should have been read. Set the new offset to the end of the file
-            offset = result[1]
-            write_stdout(result[0])
+        logs = ['/tmp/supervisord.log'] if not tunnel else []
+        logs += [proc['logfile'] for proc in get_supervisor().getAllProcessInfo() if not tunnel or proc['name'] == tunnel]
 
-        else:
-            time.sleep(0.5)
+        if not wait and not logs:
+            # print 'no logs'
+            return
+
+        cmd = 'tail ' + opts + ' '.join(logs)
+        # print cmd
+        subprocess.call(cmd, shell=True)
+    except KeyboardInterrupt:
+        pass
+    except:
+        traceback.print_exc()
 
 
+# old tail method
+#
+# def hide():
+#     numbytes = 100
+#     result = get_supervisor().tailProcessStdoutLog(tunnel, 0, numbytes)
+#     offset = result[1]
+#
+#     while True:
+#         result = get_supervisor().tailProcessStdoutLog(tunnel, offset, numbytes)
+#         # If more data was written to the log or if we've failed to read whats already there
+#         if result[1] > offset or result[2] :
+#             # if result[2]:
+#                 # All the data has not been read. Re-read entire buffer. If the entire buffer is not
+#                 # read then we get the latter part and the data at teh beginning (at the offset) is
+#                 # skipped
+#             result = get_supervisor().tailProcessStdoutLog(tunnel, offset, result[1]-offset)
+#
+#             # all the data should have been read. Set the new offset to the end of the file
+#             offset = result[1]
+#             write_stdout(result[0])
+#
+#         else:
+#             time.sleep(0.5)
 
-
-@cli.command('list')
-def list():
-    for name, config in get_config()['tunnels'].items():
-        print name
-        # print {'name':name,
-        #     'proxy': config['proxy']['host'] if 'proxy' in config and 'host' in config['proxy'] else '',
-        #     'check': config['check'] if 'check' in config else '',
-        #     'depends':config['depends'] if 'depends' in config else ''}
 
 
 # @cli.command()
@@ -639,14 +695,19 @@ def list():
 
 
 @cli.command('status')
-def status():
+@click.option('--tunnel', '-t', type=click.Choice(get_config()['tunnels'].keys()), help='specify a specific tunnel')
+@click.option('--skip', '-s', is_flag=True, help='skip tunnel health checks')
+def status(tunnel, skip):
+    '''
+    View status of all configured tunnels
+    '''
 
     if not supervisor_is_running():
         print 'Supervisor does not appear to be running'
         return
 
+
     try:
-        check_statuses = { check_result.name:check_result.status for check_result in check_dependent_tunnels(None, True) }
         sup_states = { proc['name']:proc for proc in get_supervisor().getAllProcessInfo() }
     except Exception as e:
         if 'No such file' in str(e):
@@ -655,27 +716,46 @@ def status():
         else:
             raise e
 
+    if skip:
+        check_statuses = {}
+    elif tunnel:
+        if sup_states[tunnel]['statename'] == 'RUNNING':
+            check_statuses = { check_result.name : check_result.status for check_result in check_tunnels([tunnel]) }
+        else:
+            check_statuses = {}
+    else:
+        check_statuses = { check_result.name : check_result.status for check_result in check_dependent_tunnels(None, True) }
+
+    # tunnel_configs = {x for x in get_config()['tunnels'].iteritems() if not tunnel or x['name'] == tunnel}
+    # print tunnel_configs
+
     out = [ {'name':name,
-            'state':sup_states[name]['statename'] if name in sup_states else 'N/A',
-            'checkup': check_statuses[name],
+             'state':sup_states[name]['statename'] if name in sup_states else 'N/A',
+             'description':sup_states[name]['description'] if name in sup_states else '',
+            # 'checkup': get_last_check(name),
+            'checkup': check_statuses[name] if name in check_statuses else 'skipped',
             'depends':config['depends'] if 'depends' in config else ''}
-        for name, config in get_config()['tunnels'].iteritems()]
+        for name, config in get_config()['tunnels'].iteritems() if not tunnel or name == tunnel]
 
 
     out.sort()
-    longest = len(max(get_config()['tunnels'], key=lambda t: len(t)))
-    header = 'Process'.ljust(longest + 4) + 'Depends'.ljust(longest + 4) + 'State'.ljust(10) + 'Check'.ljust(10)
+    longest = max([len(t) for t in get_config()['tunnels']])
+    state_len = max([len(d['description']) for d in out])
+    header = 'Process'.ljust(longest + 4) + 'Depends'.ljust(10) +  'Proc State'.ljust(state_len+14) + 'Conn Check'
 
     print('')
     print(header)
     print ''.ljust(len(header),'-')
     for info in sorted(out, key=lambda x: x['depends']):
-        print info['name'].ljust(longest + 4) + info['depends'].ljust(10) + info['state'].ljust(10) + info['checkup'].ljust(10)
+        print info['name'].ljust(longest + 4) + info['depends'].ljust(10) + info['state'].ljust(10) + info['description'].ljust(state_len+4) + info['checkup'].ljust(13)
     print('')
 
 
-@cli.command('ctl', help='run supervisorctl console')
+@cli.command('ctl')
 def ctl():
+    '''
+    run supervisorctl console
+    '''
     import subprocess
     try:
         subprocess.call('supervisorctl -c ~/.nyttth/supervisord.conf', shell=True)
@@ -686,7 +766,7 @@ def ctl():
 @cli.command('stop')
 def stop():
     """
-    Shutdown the supervisor
+    Stop daemon along with any tunnels that are running
     """
     try:
         childutils.getRPCInterface({'SUPERVISOR_SERVER_URL':'unix:///tmp/vpnsupervisor.sock'}).supervisor.shutdown()
@@ -702,13 +782,10 @@ def stop():
 
 
 @cli.command('start')
-@click.option('--config', '-c', default='~/.nyttth/config.yml', help='specify config file')
-def start(config):
+# @click.option('--config', '-c', default='~/.nyttth/config.yml', help='specify config file')
+def start(config=None):
     """
-    Start the supervisor daemon that keeps tunnels up
-    :param eproxy:
-    :param iproxy:
-    :return:
+    Start daemon to begin managing the configured tunnels
     """
 
     cfg = get_config(config)

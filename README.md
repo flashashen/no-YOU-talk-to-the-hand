@@ -13,7 +13,6 @@ Access all your corporate stuff and web stuff at the same time without fuss
 
 - Seeing the 'talk to the hand' page from the corporate web proxy/filter
 - Tunnel/proxy setup in too many places and in too many ways
-- Not having application specific tunnels (dbvis, datagrip) available from the console
 - Tunnels dropping silently
 - Forgetting to manually bring up tunnels after logging onto vpn
 - Re-entering ssh credentials over and over (key based auth isn't allowed everywhere)
@@ -65,6 +64,11 @@ HOST_CORP_PRIVILEGED_APP: &HOST_CORP_PRIVILEGED_APP 10.0.1.1
 HOST_CORP_SECURE_DB: &HOST_CORP_SECURE_DB 10.0.2.1
   
   
+# Global config options  
+log_level: DEBUG          # Python log level. Default is DEBUG
+monitor_poll_seconds: 5   # Monitor thread wakeup (may be exceeded by a long tunnel check). Default is 20 
+
+
 tunnels:
   
     # Watch for connection to corporate VPN. This is the 'root', external tunnel
@@ -143,77 +147,156 @@ tunnels:
 
 
 ## Installation
+    
+    $ pip install no_you_talk_to_the_hand
 
-```pip install no_you_talk_to_the_hand```
+If pip install results in a error like 'TLSV1_ALERT_PROTOCOL_VERSION' you may first need to upgrade pip:
+
+    $ curl https://bootstrap.pypa.io/get-pip.py | python
+    
+If you configure a password for any remote server then [sshpass](https://gist.github.com/arunoda/7790979) is required.
+
+---
+
+sshuttle requires root/admin privilege to change forward rules. If your user is prompted for sudo password, then you may encounter and error like **sudo no tty present and no askpass program specified**. A quick solution is to set the no password flag in the sudoers file. The following works currently on Macs:
 
 
-If you're getting install errors like 'TLSV1_ALERT_PROTOCOL_VERSION' you may first need to upgrade pip 
+    $ sudo visudo
+ 
+.. then add 'NOPASSWD' to the admin group like this:
+ 
+    $ %admin ALL=(ALL) NOPASSWD: ALL
 
-```curl https://bootstrap.pypa.io/get-pip.py | python```
 
-If you configure a password for any remote server then [sshpass](https://gist.github.com/arunoda/7790979) is required
+---
 
 If you check a tunnel via a sqlalchemy connection (see prod_db tunnel in sample config above) then sqlalchemy and the appropriate driver must be installed separately
 
 ## Running
 
-Below are some sample commands.
 
-**Note:** Before running a configuration file called config.yml must be created in the project directory. Look at sample_config.yml as a start.
-
-
-### Start - Start the supervisord process and begin managing the configured tunnels
+### start
+Start daemon to begin managing the configured tunnels (in ~/.nyttth/config.yml)
 
 ```
 $ nyttth start
 ```
 
 
-### Stop - Stop supervisord process and all tunnels with it
+### stop
+Stop daemon along with any tunnels that are running
 
 ```
 $ nyttth stop
 ```
 
 
-### Status - View status of all defined tunnels
+### status
+Help:
+```
+    $ nyttth status --help
+    
+    Usage: nyttth status [OPTIONS]
+    
+      View status of all configured tunnels
+    
+    Options:
+      -t, --tunnel [qadb|riskdb|itun|dbtun|etun|vpn|rfindb]
+                                      specify a specific tunnel
+      -s, --skip                      skip tunnel health checks
+      --help                          Show this message and exit.
+```
  
-when VPN is down:
+Example with VPN down:
 
 ``` 
-$ nyttth status
-
-Process   Depends   State     Check     
-----------------------------------------
-vpn                 N/A       down      
-rfindb    itun      STOPPED   skipped   
-dbtun     vpn       STOPPED   skipped   
-etun      vpn       STOPPED   skipped   
-itun      vpn       STOPPED   skipped   
-qadb      vpn       STOPPED   skipped   
-```
-
-when VPN is up:
+    $ nyttth status
+    
+    Process   Depends   Proc State                  Conn Check
+    ----------------------------------------------------------
+    vpn                 N/A                         down      
+    itun      vpn       STOPPED   Not started       skipped      
+    dbtun     itun      STOPPED   Not started       skipped      
+    etun      vpn       STOPPED   Not started       skipped      
+    qadb      vpn       STOPPED   Not started       skipped      
 
 ```
-$ nyttth status
 
-Process   Depends   State     Check     
-----------------------------------------
-vpn                 N/A       up        
-rfindb    itun      RUNNING   up        
-dbtun     vpn       RUNNING   up        
-etun      vpn       RUNNING   up        
-itun      vpn       RUNNING   up        
-qadb      vpn       RUNNING   up        
-```
-
-### Tail - Tail the tunnel monitor that checks tunnel statuses and brings them up or down as needed.
-
-when VPN Disconnects:
+Example with VPN up:
 
 ```
-$ nyttth tail
+    $ nyttth status
+    
+    Process   Depends   Proc State                            Conn Check
+    --------------------------------------------------------------------
+    vpn                 N/A                                   up      
+    itun      vpn       RUNNING   pid 1595, uptime 0:09:28    up      
+    dbtun     itun      RUNNING   pid 1603, uptime 0:09:23    up      
+    etun      vpn       RUNNING   pid 1565, uptime 0:09:33    up      
+    qadb      vpn       RUNNING   pid 2692, uptime 0:00:04    up      
+      
+```
+
+### tail
+
+Help:
+
+```
+    $ nyttth tail --help
+    
+    Usage: nyttth tail [OPTIONS]
+    
+    
+      Use system tail command to display logs. If a specific tunnel is not specified 
+      then all logs will be tailed including the supervisord main log and the vpnmon 
+      tunnel monitor process.
+    
+    
+    Options:
+      -t, --tunnel [qadb|itun|dbtun|etun|vpn]
+                                      specify a specific tunnel to tail. If not
+                                      specified all tunnels and the tunnel monitor
+                                      (monitor) will be tailed
+      -f, --wait                      wait for additional data
+      -n, --lines INTEGER             number of lines to display
+      --help                          Show this message and exit.
+
+
+```
+
+Tail output for a single (example) tunnel:
+
+```
+$ nyttth tail -f -t itun
+  server: warning: closed channel 158 got cmd=TCP_STOP_SENDING len=0
+  server: warning: closed channel 159 got cmd=TCP_STOP_SENDING len=0
+  server: warning: closed channel 160 got cmd=TCP_STOP_SENDING len=0
+  server: warning: closed channel 148 got cmd=TCP_STOP_SENDING len=0
+  server: warning: closed channel 162 got cmd=TCP_STOP_SENDING len=0
+  server: warning: closed channel 164 got cmd=TCP_STOP_SENDING len=0
+
+```
+
+When VPN Connects:
+
+```
+$ nyttth tail -f | grep nyttth
+2017-05-17 11:52:53,357 DEBUG nyttth: checking tunnels
+2017-05-17 11:52:53,497 INFO nyttth: qadb is down. starting
+2017-05-17 11:52:53,498 INFO nyttth: dbtun is down. starting
+2017-05-17 11:52:53,907 INFO nyttth: etun is down. starting
+2017-05-17 11:52:55,493 INFO nyttth: itun is down. starting
+2017-05-17 11:53:06,527 DEBUG nyttth: checking tunnels
+2017-05-17 11:53:06,814 INFO nyttth: rfindb is down. starting
+2017-05-17 11:53:17,826 DEBUG nyttth: checking tunnels
+2017-05-17 11:53:28,129 DEBUG nyttth: checking tunnels
+
+```
+
+When VPN Disconnects:
+
+```
+$ nyttth tail -f | grep nyttth
 2017-05-17 11:51:44,701 DEBUG nyttth: checking tunnels
 2017-05-17 11:51:55,000 DEBUG nyttth: checking tunnels
 2017-05-17 11:52:05,265 DEBUG nyttth: checking tunnels
@@ -231,23 +314,17 @@ $ nyttth tail
 2017-05-17 11:52:43,345 DEBUG nyttth: vpn is down
 ```
 
-when VPN Connects:
+### ctl 
+Run supervisorctl console
 
 ```
-2017-05-17 11:52:53,357 DEBUG nyttth: checking tunnels
-2017-05-17 11:52:53,497 INFO nyttth: qadb is down. starting
-2017-05-17 11:52:53,498 INFO nyttth: dbtun is down. starting
-2017-05-17 11:52:53,907 INFO nyttth: etun is down. starting
-2017-05-17 11:52:55,493 INFO nyttth: itun is down. starting
-2017-05-17 11:53:06,527 DEBUG nyttth: checking tunnels
-2017-05-17 11:53:06,814 INFO nyttth: rfindb is down. starting
-2017-05-17 11:53:17,826 DEBUG nyttth: checking tunnels
-2017-05-17 11:53:28,129 DEBUG nyttth: checking tunnels
-
+$ nyttth ctl
 ```
 
 
 ## Notes
+
+This project uses sshuttle version 0.78.1. Subsequent versions define PF (Packet Filter) exclusions in a way that breaks when there are exclusions in multiple instances of sshuttle.   
 
 This docs ignores whatever technical differences there are between tunnels and forwards and just uses the word 'tunnels'. 
 

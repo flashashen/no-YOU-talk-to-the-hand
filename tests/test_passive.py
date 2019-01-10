@@ -10,7 +10,8 @@ testcfg = {
                 'url': 'https://twitter.com/'
             },
             'proxy': {
-                'host': '1.1.1.1'
+                'host': '1.1.1.1',
+                'sshuttle_args': '--no-latency-control madeuparg=someval'
             },
             'forwards': {
                 'include': ['2.2.2.2'],
@@ -38,8 +39,8 @@ def test_basic_config():
 
     # from IPython import embed
     # embed()
-    print(config.get('program:testtunnel','command'))
-    assert 'sshuttle -r 1.1.1.1 2.2.2.2 -x 3.3.3.3' in config.get('program:testtunnel','command')
+    print(config)
+    assert '--no-latency-control madeuparg=someval -r 1.1.1.1 2.2.2.2 -x 3.3.3.3' in config.get('program:testtunnel','command')
 
 def test_status():
 

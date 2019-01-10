@@ -605,7 +605,7 @@ def write_stdout(s):
 
 
 @cli.command('tail')
-@click.option('--tunnel', '-t', type=click.Choice(get_config()['tunnels'].keys()), help='specify a specific tunnel to tail. If not specified all tunnels and the tunnel monitor (monitor) will be tailed')
+@click.option('--tunnel', '-t', help='specify a specific tunnel to tail. If not specified all tunnels and the tunnel monitor (monitor) will be tailed')
 @click.option('--wait', '-f', is_flag=True, help='wait for additional data')
 @click.option('--lines', '-n', help='number of lines to display', type=click.INT)
 def tail(tunnel, wait, lines):
@@ -695,7 +695,7 @@ def tail(tunnel, wait, lines):
 
 
 @cli.command('status')
-@click.option('--tunnel', '-t', type=click.Choice(get_config()['tunnels'].keys()), help='specify a specific tunnel')
+@click.option('--tunnel', '-t', help='specify a specific tunnel')
 @click.option('--skip', '-s', is_flag=True, help='skip tunnel health checks')
 def status(tunnel, skip):
     '''
@@ -782,8 +782,8 @@ def stop():
 
 
 @cli.command('start')
-# @click.option('--config', '-c', default='~/.nyttth/config.yml', help='specify config file')
-def start(config=None):
+@click.option('--config', '-c', default='~/.nyttth/config.yml', help='specify config file')
+def start(config):
     """
     Start daemon to begin managing the configured tunnels
     """

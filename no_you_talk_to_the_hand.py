@@ -1,7 +1,9 @@
+
 #!/usr/bin/python
 
 import sys, os, requests, socket, time, subprocess, six, traceback
 from concurrent import futures
+
 
 import yaml
 from supervisor import childutils
@@ -155,7 +157,7 @@ serverurl=unix:///tmp/vpnsupervisor.sock ; use a unix:// URL  for a unix socket
 
 {% for tunnel in tunnels %}
 [program:{{ tunnel.name }}]
-command=bash -c "{{tunnel.proxy.wrap_cmd}} sshuttle {{tunnel.proxy.sshuttle_args}} -r {{ tunnel.proxy.target}}{%for include in tunnel.forwards.include%} {{include}}{%endfor%} {%for exclude in tunnel.forwards.exclude%}-x {{exclude}} {%endfor%}"
+command=bash -c "{{tunnel.proxy.wrap_cmd}} sshuttle -vvv {{tunnel.proxy.sshuttle_args}} -r {{ tunnel.proxy.target}}{%for include in tunnel.forwards.include%} {{include}}{%endfor%} {%for exclude in tunnel.forwards.exclude%}-x {{exclude}} {%endfor%}"
 autostart=false
 autorestart=false
 redirect_stderr=true
@@ -164,7 +166,7 @@ startretries=2
 
 
 [program:vpnmon]
-command=python -c 'import no_you_talk_to_the_hand as hand; hand.vpnmonitor()'
+command=python3 -c 'import no_you_talk_to_the_hand as hand; hand.vpnmonitor()'
 autostart=true
 autorestart=true
 redirect_stderr=true
@@ -407,7 +409,7 @@ def vpnmonitor():
             time.sleep(get_monitor_poll_seconds())
             # childutils.listener.ok()
         except Exception as e:
-            print e
+            print(e)
 
 
 
@@ -452,9 +454,9 @@ def get_config(config='~/.nyttth/config.yml'):
 
         if os.path.isfile(cfgpath):
             with open(cfgpath, 'r') as stream:
-                cfg = yaml.load(stream)
+                cfg = yaml.load(stream, Loader=yaml.FullLoader)
         else:
-            print 'config not found at {}. Create y/n?'.format(cfgpath)
+            print('config not found at {}. Create y/n?'.format(cfgpath))
             if propmt_yn():
                 import errno
                 try:
@@ -464,10 +466,10 @@ def get_config(config='~/.nyttth/config.yml'):
                         raise
                 with open(cfgpath, 'w') as cfg_file:
                     cfg_file.write(SAMPLE_CONFIG)
-                print 'Sample configuration has been written to {}.\n You will need to edit '.format(cfgpath) + \
-                      'this configuration with real values from your networking environment. Exiting.'
+                print('Sample configuration has been written to {}.\n You will need to edit '.format(cfgpath) + \
+                      'this configuration with real values from your networking environment. Exiting.')
             else:
-                print 'Exiting'
+                print('Exiting')
             exit()
         if 'log_level' in cfg:
             # print('setting log level to {}'.format(cfg['log_level']))
@@ -500,7 +502,7 @@ def get_last_check(tunnel_name):
     return get_run_data(tunnel_name)['last_check'] if 'last_check' in get_run_data(tunnel_name) else 'NOT CHECKED'
 def set_last_check(tunnel_name, result):
     try:
-        print 'last check value before set: ', get_run_data(tunnel_name)['last_check'], '. new result: ', result
+        print('last check value before set: ', get_run_data(tunnel_name)['last_check'], '. new result: ', result)
     except:
         pass
     get_run_data(tunnel_name)['last_check'] = result
@@ -614,7 +616,7 @@ def tail(tunnel, wait, lines):
     Use system tail command to display logs. If a specific tunnel is not specified then all logs will be tailed including the supervisord main log and the vpnmon tunnel monitor process.
     '''
     if not supervisor_is_running():
-        print 'Supervisor does not appear to be running'
+        print('Supervisor does not appear to be running')
         return
 
     opts = '-f ' if wait else ''
@@ -703,7 +705,7 @@ def status(tunnel, skip):
     '''
 
     if not supervisor_is_running():
-        print 'Supervisor does not appear to be running'
+        print('Supervisor does not appear to be running')
         return
 
 
@@ -711,7 +713,7 @@ def status(tunnel, skip):
         sup_states = { proc['name']:proc for proc in get_supervisor().getAllProcessInfo() }
     except Exception as e:
         if 'No such file' in str(e):
-            print 'Supervisor does not appear to be running'
+            print('Supervisor does not appear to be running')
             return
         else:
             raise e
@@ -735,19 +737,19 @@ def status(tunnel, skip):
             # 'checkup': get_last_check(name),
             'checkup': check_statuses[name] if name in check_statuses else 'skipped',
             'depends':config['depends'] if 'depends' in config else ''}
-        for name, config in get_config()['tunnels'].iteritems() if not tunnel or name == tunnel]
+        for name, config in get_config()['tunnels'].items() if not tunnel or name == tunnel]
 
 
-    out.sort()
+    out = sorted(out, key=lambda x: x['name'])
     longest = max([len(t) for t in get_config()['tunnels']])
     state_len = max([len(d['description']) for d in out])
     header = 'Process'.ljust(longest + 4) + 'Depends'.ljust(10) +  'Proc State'.ljust(state_len+14) + 'Conn Check'
 
     print('')
     print(header)
-    print ''.ljust(len(header),'-')
+    print(''.ljust(len(header),'-'))
     for info in sorted(out, key=lambda x: x['depends']):
-        print info['name'].ljust(longest + 4) + info['depends'].ljust(10) + info['state'].ljust(10) + info['description'].ljust(state_len+4) + info['checkup'].ljust(13)
+        print(info['name'].ljust(longest + 4) + info['depends'].ljust(10) + info['state'].ljust(10) + info['description'].ljust(state_len+4) + info['checkup'].ljust(13))
     print('')
 
 
@@ -774,7 +776,7 @@ def stop():
         if not 'No such' in str(e):
             raise
         else:
-            print 'Supervisor does not appear to be running'
+            print('Supervisor does not appear to be running')
             return
 
     print('Supervisor stopped')
@@ -799,7 +801,7 @@ def start(config):
         if 'already listening' in str(e):
             print('Supervisor appears to already be running')
         else:
-            print str(e)
+            print(str(e))
 
         return 1
 
